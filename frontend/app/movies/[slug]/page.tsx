@@ -228,6 +228,66 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
               </div>
             </div>
           </div>
+          <div className="panel">
+            <div className="section-header" style={{ marginTop: 0 }}>
+              <div>
+                <h3>Public Opinion</h3>
+                <p>What viewers are broadly saying across the collected discussion sources, especially YouTube comments.</p>
+              </div>
+            </div>
+            <div className="stack">
+              <div className="metric-card">
+                <div className="metric-label">Overall Read</div>
+                <p className="subtle">{ai.public_opinion.overall_summary}</p>
+              </div>
+              <div className="overview-grid">
+                <div className="metric-card">
+                  <div className="metric-label">Positive</div>
+                  <div className="metric-value overview-title">{ai.public_opinion.positive_count}</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Neutral</div>
+                  <div className="metric-value overview-title">{ai.public_opinion.neutral_count}</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Negative</div>
+                  <div className="metric-value overview-title">{ai.public_opinion.negative_count}</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Average Sentiment</div>
+                  <div className="metric-value overview-title">{Math.round(ai.public_opinion.average_sentiment * 100)}%</div>
+                </div>
+              </div>
+              {ai.public_opinion.top_themes.length ? (
+                <div className="genre-list">
+                  {ai.public_opinion.top_themes.map((theme) => (
+                    <span className="genre-tag" key={theme}>{theme}</span>
+                  ))}
+                </div>
+              ) : null}
+              {ai.public_opinion.source_breakdown.length ? (
+                <div className="compare-stat-grid">
+                  {ai.public_opinion.source_breakdown.map((item) => (
+                    <div key={item.source}>
+                      <div className="metric-label">{item.source}</div>
+                      <div>{item.item_count} items</div>
+                      <div className="meta">sentiment {Math.round(item.average_sentiment * 100)}%</div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {ai.public_opinion.highlighted_quotes.length ? (
+                <div className="stack">
+                  {ai.public_opinion.highlighted_quotes.map((quote, index) => (
+                    <div className="metric-card" key={`${index}-${quote.slice(0, 24)}`}>
+                      <div className="metric-label">Viewer Highlight</div>
+                      <p className="subtle">{quote}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
           {movie.wikipedia_summary ? (
             <div className="panel">
               <div className="section-header" style={{ marginTop: 0 }}>

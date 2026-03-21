@@ -43,8 +43,26 @@ class MovieSummarySnapshotResponse(BaseModel):
     model_version: str
 
 
+class PublicOpinionSourceBreakdown(BaseModel):
+    source: str
+    item_count: int
+    average_sentiment: float
+
+
+class PublicOpinionResponse(BaseModel):
+    overall_summary: str
+    positive_count: int
+    neutral_count: int
+    negative_count: int
+    average_sentiment: float
+    top_themes: list[str]
+    source_breakdown: list[PublicOpinionSourceBreakdown]
+    highlighted_quotes: list[str]
+
+
 class MovieAIOverviewResponse(BaseModel):
     sentiment: MovieSentimentSnapshotResponse
     prediction: MoviePredictionSnapshotResponse
     summary: MovieSummarySnapshotResponse
+    public_opinion: PublicOpinionResponse
     discussions: list[DiscussionItem]

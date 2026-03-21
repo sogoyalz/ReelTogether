@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: movie-pulse-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/ready
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: ENABLE_DOCS
+        value: "false"
+      - key: AUTO_CREATE_TABLES
+        value: "false"
+
+  - type: web
+    name: movie-pulse-frontend
+    runtime: docker
+    rootDir: frontend
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: API_BASE_URL
+        sync: false

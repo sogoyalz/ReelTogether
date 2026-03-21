@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Generic, TypeVar
 
+from app.services.redis_store import get_json, set_json
+
 T = TypeVar("T")
 
 
@@ -22,6 +24,10 @@ class TTLCache(Generic[T]):
         self._lock = Lock()
 
     def get_or_set(self, key: str, factory: Callable[[], T]) -> T:
+        redis_value = get_json(key)
+        if redis_value is not None:
+            return redis_value
+
         now = time.time()
         with self._lock:
             entry = self._entries.get(key)
@@ -29,6 +35,7 @@ class TTLCache(Generic[T]):
                 return entry.value
 
         value = factory()
+        set_json(key, value, self.ttl_seconds)
         with self._lock:
             self._entries[key] = _CacheEntry(value=value, expires_at=now + self.ttl_seconds)
         return value

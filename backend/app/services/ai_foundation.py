@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from collections import Counter
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -71,7 +72,75 @@ def get_ai_overview(db: Session, movie_id: int) -> dict | None:
         "sentiment": sentiment,
         "prediction": prediction,
         "summary": summary,
+        "public_opinion": build_public_opinion(discussions),
         "discussions": discussions,
+    }
+
+
+def build_public_opinion(discussions: list[MovieDiscussion]) -> dict:
+    if not discussions:
+        return {
+            "overall_summary": "Public opinion is still limited for this title. More audience discussion is needed before a stable read emerges.",
+            "positive_count": 0,
+            "neutral_count": 0,
+            "negative_count": 0,
+            "average_sentiment": 0.0,
+            "top_themes": [],
+            "source_breakdown": [],
+            "highlighted_quotes": [],
+        }
+
+    sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
+    source_scores: dict[str, list[float]] = {}
+    theme_counter: Counter[str] = Counter()
+    highlighted_quotes: list[str] = []
+
+    for discussion in discussions:
+        sentiment = _discussion_sentiment(discussion)
+        sentiment_counts[sentiment] += 1
+        source_scores.setdefault(discussion.source, []).append(_sentiment_value(sentiment))
+        theme_counter.update(_extract_themes(discussion.body))
+        if discussion.source == "youtube" and len(highlighted_quotes) < 3:
+            highlighted_quotes.append(discussion.body[:180].strip())
+
+    sample_size = sum(sentiment_counts.values()) or 1
+    average_sentiment = round(
+        (
+            sentiment_counts["positive"] - sentiment_counts["negative"]
+        ) / sample_size,
+        2,
+    )
+    tone = "mixed"
+    if sentiment_counts["positive"] > sentiment_counts["negative"] * 1.4:
+        tone = "mostly positive"
+    elif sentiment_counts["negative"] > sentiment_counts["positive"] * 1.2:
+        tone = "skeptical"
+
+    top_themes = [theme for theme, _ in theme_counter.most_common(4)]
+    overall_summary = (
+        f"Current public opinion is {tone}, with {sentiment_counts['positive']} positive, "
+        f"{sentiment_counts['neutral']} neutral, and {sentiment_counts['negative']} negative discussion items. "
+        f"The main audience conversation is centering on {', '.join(top_themes) if top_themes else 'general movie buzz'}."
+    )
+
+    source_breakdown = [
+        {
+            "source": source,
+            "item_count": len(scores),
+            "average_sentiment": round(sum(scores) / len(scores), 2) if scores else 0.0,
+        }
+        for source, scores in sorted(source_scores.items(), key=lambda item: item[0])
+    ]
+
+    return {
+        "overall_summary": overall_summary,
+        "positive_count": sentiment_counts["positive"],
+        "neutral_count": sentiment_counts["neutral"],
+        "negative_count": sentiment_counts["negative"],
+        "average_sentiment": average_sentiment,
+        "top_themes": top_themes,
+        "source_breakdown": source_breakdown,
+        "highlighted_quotes": highlighted_quotes,
     }
 
 
@@ -230,3 +299,45 @@ def _parse_float(value: str | None) -> float:
         return float(value)
     except ValueError:
         return 0.0
+
+
+def _discussion_sentiment(discussion: MovieDiscussion) -> str:
+    payload = {}
+    if discussion.raw_payload:
+        try:
+            payload = json.loads(discussion.raw_payload)
+        except json.JSONDecodeError:
+            payload = {}
+    sentiment = payload.get("sentiment")
+    if sentiment in {"positive", "neutral", "negative"}:
+        return sentiment
+
+    text = discussion.body.lower()
+    positive_hits = sum(word in text for word in ("love", "great", "amazing", "hype", "excellent", "fun"))
+    negative_hits = sum(word in text for word in ("bad", "boring", "mess", "awful", "weak", "terrible"))
+    if positive_hits > negative_hits:
+        return "positive"
+    if negative_hits > positive_hits:
+        return "negative"
+    return "neutral"
+
+
+def _sentiment_value(sentiment: str) -> float:
+    if sentiment == "positive":
+        return 1.0
+    if sentiment == "negative":
+        return -1.0
+    return 0.0
+
+
+def _extract_themes(text: str) -> list[str]:
+    normalized = text.lower()
+    theme_map = {
+        "cast": ("cast", "actor", "performance"),
+        "visuals": ("visual", "cinematography", "shot", "effects"),
+        "story": ("story", "plot", "writing", "script"),
+        "trailer": ("trailer", "teaser"),
+        "music": ("music", "score", "soundtrack"),
+        "action": ("action", "fight", "sequence"),
+    }
+    return [theme for theme, keywords in theme_map.items() if any(keyword in normalized for keyword in keywords)]

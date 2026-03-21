@@ -9,6 +9,7 @@ from app.api import admin, ai, analytics, movies, search
 from app.core.middleware import InMemoryRateLimitMiddleware, RequestContextMiddleware
 from app.core.config import settings
 from app.services.bootstrap import initialize_database
+from app.services.redis_store import redis_health
 from app.services.startup_jobs import enqueue_startup_sync, get_startup_sync_status, run_startup_sync_once
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ def health_check():
             "tmdb_api_configured": settings.tmdb_api_configured,
             "youtube_api_configured": settings.youtube_api_configured,
             "omdb_api_configured": settings.omdb_api_configured,
+            "redis": redis_health(),
         },
         "startup_sync": get_startup_sync_status(),
     }

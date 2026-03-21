@@ -34,7 +34,10 @@ Set `NEXT_PUBLIC_API_URL` in `frontend/.env.local` to the backend URL, for examp
 
 ```env
 NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+API_BASE_URL=http://127.0.0.1:8000
 ```
+
+The frontend also includes a same-origin proxy route in [`frontend/app/api/[...path]/route.ts`](/Users/souravgoyal/Desktop/moviess/frontend/app/api/[...path]/route.ts), so production deployments can set `API_BASE_URL` server-side instead of exposing the backend URL directly in the client bundle.
 
 ## Production Notes
 
@@ -64,6 +67,7 @@ Important production values:
 - `CORS_ORIGINS=["https://your-frontend-domain.com"]`
 - `SECRET_KEY=...`
 - `ADMIN_API_KEY=...`
+- `API_BASE_URL=https://your-backend-domain.com` on the frontend service
 
 ### Migrations
 
@@ -117,7 +121,6 @@ The frontend builds in standalone mode and serves on port `3000`.
 
 The project is stronger now, but these are still future work if you want a larger production system:
 
-- external cache like Redis instead of only in-process caches
 - external worker/queue system instead of in-process background threads
 - Sentry or similar error monitoring
 - CI/CD pipeline

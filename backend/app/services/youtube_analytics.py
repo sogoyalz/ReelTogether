@@ -11,11 +11,23 @@ from urllib.request import urlopen
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.ai import MovieDiscussion
 from app.models.movie import Movie, MovieAnalytics
 from app.repositories import movies as movie_repository
 from app.services.hype_calculator import HypeCalculator
 
 YOUTUBE_VIDEOS_ENDPOINT = "https://www.googleapis.com/youtube/v3/videos"
+YOUTUBE_COMMENTS_ENDPOINT = "https://www.googleapis.com/youtube/v3/commentThreads"
+POSITIVE_TERMS = {
+    "amazing", "awesome", "best", "brilliant", "epic", "excellent", "fire", "fun",
+    "goat", "great", "hype", "iconic", "impressive", "incredible", "love", "loved",
+    "masterpiece", "perfect", "phenomenal", "promising", "strong", "stunning",
+}
+NEGATIVE_TERMS = {
+    "awful", "bad", "boring", "cheap", "confusing", "cringe", "disappointing", "flat",
+    "hate", "hated", "mess", "mid", "poor", "rough", "terrible", "trash", "weak", "worse",
+    "worst",
+}
 
 
 @dataclass
@@ -112,6 +124,7 @@ def _refresh_movies(db: Session, movies: list[Movie]) -> RefreshResult:
                 result.skipped_reasons.append(f"{analytics.movie.title}: video statistics were not returned by YouTube")
             continue
 
+        comments = _fetch_video_comments(video_id)
         for analytics in analytics_entries:
             analytics.youtube_views = stats["view_count"]
             analytics.youtube_likes = stats["like_count"]
@@ -119,6 +132,7 @@ def _refresh_movies(db: Session, movies: list[Movie]) -> RefreshResult:
             analytics.buzz_score = _recalculate_buzz_score(analytics)
             analytics.hype_score = _recalculate_hype_score(analytics)
             analytics.last_updated = now
+            _sync_youtube_comments(db, analytics.movie, video_id, comments)
             result.refreshed_movies += 1
 
     db.commit()
@@ -162,6 +176,82 @@ def _fetch_video_statistics(video_ids: list[str]) -> dict[str, dict[str, int]]:
     return aggregated
 
 
+def _fetch_video_comments(video_id: str, limit: int = 8) -> list[dict[str, Any]]:
+    query = (
+        f"{YOUTUBE_COMMENTS_ENDPOINT}?"
+        f"{urlencode({
+            'part': 'snippet',
+            'videoId': video_id,
+            'maxResults': min(limit, 20),
+            'order': 'relevance',
+            'textFormat': 'plainText',
+            'key': settings.YOUTUBE_API_KEY,
+        })}"
+    )
+    try:
+        with urlopen(query, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError):
+        return []
+
+    comments: list[dict[str, Any]] = []
+    for item in payload.get("items", []):
+        snippet = item.get("snippet", {}).get("topLevelComment", {}).get("snippet", {})
+        comment_id = item.get("id")
+        text = (snippet.get("textDisplay") or "").strip()
+        if not isinstance(comment_id, str) or not text:
+            continue
+        comments.append(
+            {
+                "id": comment_id,
+                "author": snippet.get("authorDisplayName"),
+                "text": text,
+                "like_count": _safe_int(snippet.get("likeCount")),
+                "published_at": snippet.get("publishedAt"),
+                "url": f"https://www.youtube.com/watch?v={video_id}&lc={comment_id}",
+                "sentiment": _score_comment_sentiment(text),
+            }
+        )
+    return comments
+
+
+def _sync_youtube_comments(db: Session, movie: Movie, video_id: str, comments: list[dict[str, Any]]) -> None:
+    for index, comment in enumerate(comments, start=1):
+        external_id = f"youtube-{video_id}-{comment['id']}"
+        existing = next((item for item in movie.discussions if item.external_id == external_id), None)
+        body = comment["text"]
+        title = f"YouTube viewer reaction #{index}"
+        payload = json.dumps(
+            {
+                "video_id": video_id,
+                "like_count": comment["like_count"],
+                "sentiment": comment["sentiment"],
+            }
+        )
+        if existing is None:
+            db.add(
+                MovieDiscussion(
+                    movie_id=movie.id,
+                    source="youtube",
+                    external_id=external_id,
+                    title=title,
+                    body=body,
+                    author=comment["author"],
+                    engagement_score=float(comment["like_count"]),
+                    url=comment["url"],
+                    raw_payload=payload,
+                )
+            )
+            continue
+
+        existing.title = title
+        existing.body = body
+        existing.author = comment["author"]
+        existing.engagement_score = float(comment["like_count"])
+        existing.url = comment["url"]
+        existing.raw_payload = payload
+
+
 def _recalculate_buzz_score(analytics: MovieAnalytics) -> float:
     payload = {
         "youtube_views": analytics.youtube_views,
@@ -200,3 +290,18 @@ def _looks_like_video_id(candidate: str | None) -> bool:
     if not candidate:
         return False
     return len(candidate) == 11 and all(character.isalnum() or character in {"-", "_"} for character in candidate)
+
+
+def _score_comment_sentiment(text: str) -> str:
+    words = {
+        token.strip(".,!?;:'\"()[]{}").lower()
+        for token in text.split()
+        if token.strip()
+    }
+    positive = len(words & POSITIVE_TERMS)
+    negative = len(words & NEGATIVE_TERMS)
+    if positive > negative:
+        return "positive"
+    if negative > positive:
+        return "negative"
+    return "neutral"

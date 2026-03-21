@@ -1,9 +1,7 @@
 import axios from 'axios'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-
 export const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: '',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -186,6 +184,20 @@ export interface MovieAIOverview {
     critic_summary: string
     key_themes: string[]
     model_version: string
+  }
+  public_opinion: {
+    overall_summary: string
+    positive_count: number
+    neutral_count: number
+    negative_count: number
+    average_sentiment: number
+    top_themes: string[]
+    source_breakdown: {
+      source: string
+      item_count: number
+      average_sentiment: number
+    }[]
+    highlighted_quotes: string[]
   }
   discussions: {
     source: string

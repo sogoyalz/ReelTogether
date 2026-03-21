@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
+from app.services.redis_store import sliding_window_allow
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -43,6 +44,16 @@ class InMemoryRateLimitMiddleware(BaseHTTPMiddleware):
         now = time.monotonic()
         window_seconds = 60
         limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE + settings.RATE_LIMIT_BURST_REQUESTS
+        redis_allowed, retry_after = sliding_window_allow(f"rate-limit:{key}", limit, window_seconds)
+        if not redis_allowed:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Rate limit exceeded",
+                    "retry_after_seconds": retry_after,
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
 
         with self._lock:
             entries = self._requests[key]

@@ -7,6 +7,8 @@ from app.schemas.ai import (
     DiscussionItem,
     MovieAIOverviewResponse,
     MoviePredictionSnapshotResponse,
+    PublicOpinionResponse,
+    PublicOpinionSourceBreakdown,
     MovieSentimentSnapshotResponse,
     MovieSummarySnapshotResponse,
 )
@@ -57,6 +59,19 @@ async def get_movie_ai_overview(movie_id: int, db: Session = Depends(get_db)):
             critic_summary=summary.critic_summary,
             key_themes=[theme.strip() for theme in summary.key_themes.split(",") if theme.strip()],
             model_version=summary.model_version,
+        ),
+        public_opinion=PublicOpinionResponse(
+            overall_summary=overview["public_opinion"]["overall_summary"],
+            positive_count=overview["public_opinion"]["positive_count"],
+            neutral_count=overview["public_opinion"]["neutral_count"],
+            negative_count=overview["public_opinion"]["negative_count"],
+            average_sentiment=overview["public_opinion"]["average_sentiment"],
+            top_themes=overview["public_opinion"]["top_themes"],
+            source_breakdown=[
+                PublicOpinionSourceBreakdown(**item)
+                for item in overview["public_opinion"]["source_breakdown"]
+            ],
+            highlighted_quotes=overview["public_opinion"]["highlighted_quotes"],
         ),
         discussions=[
             DiscussionItem(

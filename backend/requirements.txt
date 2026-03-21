@@ -4,3 +4,4 @@ sqlalchemy==2.0.45
 pydantic-settings==2.7.1
 alembic==1.14.1
 Wikipedia-API==0.6.0
+redis==5.2.1
