@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 
+import { SiteHeader } from '@/components/shared/SiteHeader'
+
 import './globals.css'
 import { Providers } from './providers'
 
@@ -19,23 +21,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <div className="site-frame">
-            <header className="site-header">
-              <div className="site-header-inner">
-                <Link className="brand-mark" href="/">
-                  <span className="brand-dot" />
-                  <span>
-                    <strong>Movie Pulse</strong>
-                    <small>Analytics Studio</small>
-                  </span>
-                </Link>
-                <nav className="site-nav">
-                  <Link href="/">Home</Link>
-                  <Link href="/movies">Library</Link>
-                  <Link href="/discover">Discover</Link>
-                  <Link href="/compare">Compare</Link>
-                </nav>
-              </div>
-            </header>
+            <SiteHeader />
             {children}
             <footer className="site-footer">
               <div className="site-footer-inner">

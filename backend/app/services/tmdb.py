@@ -101,13 +101,16 @@ def sync_tmdb_search_results(db: Session, query: str, limit: int = 8) -> TmdbSyn
     return result
 
 
-def get_tmdb_movie_enrichment(movie: Movie) -> dict | None:
+def get_tmdb_movie_enrichment(movie: Movie, allow_network: bool = False) -> dict | None:
     if not settings.tmdb_api_configured or not movie.tmdb_id:
         return None
 
     cached = _DETAIL_CACHE.get(movie.tmdb_id)
     if cached is not None:
         return cached
+
+    if not allow_network:
+        return None
 
     try:
         details = _tmdb_get("movie/{movie_id}".format(movie_id=movie.tmdb_id), append_to_response="videos,credits,images")

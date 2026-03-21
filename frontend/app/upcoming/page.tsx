@@ -4,12 +4,19 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 
 import { MovieCard } from '@/components/shared/MovieCard'
+import { ErrorState, LoadingState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
 
 export default function UpcomingPage() {
   const upcomingQuery = useQuery({
-    queryKey: ['upcoming-movies', 100],
-    queryFn: () => movieApi.getUpcoming(100),
+    queryKey: ['upcoming-movies'],
+    queryFn: () =>
+      movieApi.browseCatalog({
+        status: 'future',
+        sort: 'release',
+        page: 1,
+        page_size: 48,
+      }),
   })
 
   return (
@@ -36,16 +43,16 @@ export default function UpcomingPage() {
       <div className="section-header">
         <div>
           <h2>Upcoming and Announced</h2>
-          <p>{upcomingQuery.data?.length || 0} titles currently listed.</p>
+          <p>{upcomingQuery.data?.total || 0} titles currently listed.</p>
         </div>
       </div>
-      {upcomingQuery.isLoading ? (
-        <p className="subtle">Loading upcoming slate...</p>
-      ) : (
+      {upcomingQuery.isLoading ? <LoadingState title="Loading upcoming slate" description="Pulling the next release wave from the catalog." /> : null}
+      {upcomingQuery.isError ? <ErrorState title="Upcoming page unavailable" description="The upcoming movie page could not be loaded." /> : null}
+      {upcomingQuery.data ? (
         <div className="section-grid">
-          {upcomingQuery.data?.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
+          {upcomingQuery.data.items.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
         </div>
-      )}
+      ) : null}
     </main>
   )
 }

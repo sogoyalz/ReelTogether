@@ -52,6 +52,16 @@ class MovieDetail(MovieSummary):
     trailer_embed_url: str | None = None
     box_office_history: list[dict[str, str | int]] = []
     backdrops: list[str] = []
+    wikipedia_summary: str | None = None
+    wikipedia_url: str | None = None
+    wikipedia_categories: list[str] = []
+    wikidata_id: str | None = None
+    wikidata_url: str | None = None
+    wikidata_label: str | None = None
+    wikidata_description: str | None = None
+    wikidata_instance_of: list[str] = []
+    wikidata_genres: list[str] = []
+    wikidata_countries: list[str] = []
 
 
 class CatalogFacets(BaseModel):

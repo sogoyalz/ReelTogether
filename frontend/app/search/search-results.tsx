@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { MovieCard } from '@/components/shared/MovieCard'
 import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
@@ -14,22 +14,30 @@ export function SearchResults() {
   const searchParams = useSearchParams()
   const query = searchParams.get('q') || ''
   const [genreFilter, setGenreFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [franchiseFilter, setFranchiseFilter] = useState('all')
   const [studioFilter, setStudioFilter] = useState('all')
   const [yearFilter, setYearFilter] = useState('')
   const [minimumRating, setMinimumRating] = useState(0)
+  const [minimumHype, setMinimumHype] = useState(0)
+  const [minimumPopularity, setMinimumPopularity] = useState(0)
+  const [sortBy, setSortBy] = useState('hype')
   const [page, setPage] = useState(1)
 
   const resultsQuery = useQuery({
-    queryKey: ['search', query, genreFilter, franchiseFilter, studioFilter, yearFilter, minimumRating, page],
+    queryKey: ['search', query, statusFilter, genreFilter, franchiseFilter, studioFilter, yearFilter, minimumRating, minimumHype, minimumPopularity, sortBy, page],
     queryFn: () =>
       movieApi.searchMovies({
         q: query,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
         genre: genreFilter !== 'all' ? genreFilter : undefined,
         franchise: franchiseFilter !== 'all' ? franchiseFilter : undefined,
         studio: studioFilter !== 'all' ? studioFilter : undefined,
         year: yearFilter ? Number(yearFilter) : undefined,
         min_rating: minimumRating || undefined,
+        min_hype: minimumHype || undefined,
+        min_popularity: minimumPopularity || undefined,
+        sort: sortBy,
         page,
         page_size: 24,
       }),
@@ -38,14 +46,40 @@ export function SearchResults() {
 
   useEffect(() => {
     setPage(1)
-  }, [query, genreFilter, franchiseFilter, studioFilter, yearFilter, minimumRating])
+  }, [query, statusFilter, genreFilter, franchiseFilter, studioFilter, yearFilter, minimumRating, minimumHype, minimumPopularity, sortBy])
 
   const response = resultsQuery.data
   const results = response?.items || []
   const genres = response?.facets.genres || []
+  const statuses = response?.facets.statuses || []
   const franchises = response?.facets.franchises || []
   const studios = response?.facets.studios || []
   const years = response?.facets.years || []
+  const researchSnapshot = useMemo(() => {
+    if (!results.length) {
+      return null
+    }
+    const totalBuzz = results.reduce((sum, item) => sum + item.buzz_score, 0)
+    const totalHype = results.reduce((sum, item) => sum + item.hype_score, 0)
+    const totalPopularity = results.reduce((sum, item) => sum + item.tmdb_popularity, 0)
+    const topResult = [...results].sort((left, right) => right.hype_score - left.hype_score)[0]
+    const strongestBuzz = [...results].sort((left, right) => right.buzz_score - left.buzz_score)[0]
+    const franchiseMix = results.reduce<Record<string, number>>((accumulator, item) => {
+      const key = item.franchise || 'Standalone'
+      accumulator[key] = (accumulator[key] || 0) + 1
+      return accumulator
+    }, {})
+    const topFranchise = Object.entries(franchiseMix).sort((left, right) => right[1] - left[1])[0]
+
+    return {
+      averageBuzz: (totalBuzz / results.length).toFixed(1),
+      averageHype: (totalHype / results.length).toFixed(1),
+      averagePopularity: (totalPopularity / results.length).toFixed(1),
+      topResult,
+      strongestBuzz,
+      topFranchise,
+    }
+  }, [results])
 
   return (
     <main className="page-shell">
@@ -67,11 +101,15 @@ export function SearchResults() {
           <button
             className="cta-button secondary-button"
             onClick={() => {
+              setStatusFilter('all')
               setGenreFilter('all')
               setFranchiseFilter('all')
               setStudioFilter('all')
               setYearFilter('')
               setMinimumRating(0)
+              setMinimumHype(0)
+              setMinimumPopularity(0)
+              setSortBy('hype')
               setPage(1)
             }}
             type="button"
@@ -82,6 +120,13 @@ export function SearchResults() {
       </section>
 
       <div className="filter-grid panel">
+        <label>
+          <span className="metric-label">Status</span>
+          <select className="compare-select" onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
+            <option value="all">All</option>
+            {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
+        </label>
         <label>
           <span className="metric-label">Genre</span>
           <select className="compare-select" onChange={(event) => setGenreFilter(event.target.value)} value={genreFilter}>
@@ -114,6 +159,25 @@ export function SearchResults() {
           <span className="metric-label">Min IMDb</span>
           <input className="search-input" min={0} max={10} onChange={(event) => setMinimumRating(Number(event.target.value || 0))} step="0.1" type="number" value={minimumRating} />
         </label>
+        <label>
+          <span className="metric-label">Min Hype</span>
+          <input className="search-input" min={0} max={100} onChange={(event) => setMinimumHype(Number(event.target.value || 0))} type="number" value={minimumHype} />
+        </label>
+        <label>
+          <span className="metric-label">Min Popularity</span>
+          <input className="search-input" min={0} max={100} onChange={(event) => setMinimumPopularity(Number(event.target.value || 0))} type="number" value={minimumPopularity} />
+        </label>
+        <label>
+          <span className="metric-label">Sort</span>
+          <select className="compare-select" onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
+            <option value="hype">Hype score</option>
+            <option value="buzz">Buzz score</option>
+            <option value="popularity">Popularity</option>
+            <option value="rating">IMDb rating</option>
+            <option value="release">Newest release</option>
+            <option value="title">Title</option>
+          </select>
+        </label>
       </div>
 
       <div className="section-header">
@@ -121,7 +185,42 @@ export function SearchResults() {
           <h2>Results for "{query}"</h2>
           <p>{response?.total || 0} matches in the tracked catalog.</p>
         </div>
+        {response ? <p className="meta">Sorted by {sortBy}. Showing {results.length} results on this page.</p> : null}
       </div>
+      {researchSnapshot ? (
+        <div className="overview-grid" style={{ marginBottom: 20 }}>
+          <div className="metric-card">
+            <div className="metric-label">Average Buzz</div>
+            <div className="metric-value overview-title">{researchSnapshot.averageBuzz}</div>
+            <p className="meta">Average buzz across the current result set.</p>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Average Hype</div>
+            <div className="metric-value overview-title">{researchSnapshot.averageHype}</div>
+            <p className="meta">Average hype across the current result set.</p>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Average Popularity</div>
+            <div className="metric-value overview-title">{researchSnapshot.averagePopularity}</div>
+            <p className="meta">TMDB popularity signal across these matches.</p>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Top Result</div>
+            <div className="metric-value overview-title">{researchSnapshot.topResult.title}</div>
+            <p className="meta">Strongest hype signal in the current search.</p>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Strongest Buzz</div>
+            <div className="metric-value overview-title">{researchSnapshot.strongestBuzz.title}</div>
+            <p className="meta">Leading conversation volume right now.</p>
+          </div>
+          <div className="metric-card">
+            <div className="metric-label">Leading Franchise</div>
+            <div className="metric-value overview-title">{researchSnapshot.topFranchise?.[0] || 'Mixed'}</div>
+            <p className="meta">{researchSnapshot.topFranchise ? `${researchSnapshot.topFranchise[1]} results` : 'No franchise concentration found.'}</p>
+          </div>
+        </div>
+      ) : null}
       {resultsQuery.isLoading ? <LoadingState title="Searching movies" description="Scanning the catalog for matching titles and metadata." /> : null}
       {resultsQuery.isError ? <ErrorState title="Search unavailable" description="The search result set could not be loaded." /> : null}
       {!resultsQuery.isLoading && !resultsQuery.isError && !results.length ? (

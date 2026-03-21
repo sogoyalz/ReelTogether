@@ -29,6 +29,31 @@ class Movie(Base):
         back_populates="movie",
         cascade="all, delete-orphan",
     )
+    discussions: Mapped[list["MovieDiscussion"]] = relationship(
+        "MovieDiscussion",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
+    sentiment_snapshots: Mapped[list["MovieSentimentSnapshot"]] = relationship(
+        "MovieSentimentSnapshot",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
+    prediction_snapshots: Mapped[list["MoviePredictionSnapshot"]] = relationship(
+        "MoviePredictionSnapshot",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
+    feature_snapshots: Mapped[list["MovieFeatureSnapshot"]] = relationship(
+        "MovieFeatureSnapshot",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
+    summary_snapshots: Mapped[list["MovieSummarySnapshot"]] = relationship(
+        "MovieSummarySnapshot",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
 
 
 class MovieAnalytics(Base):

@@ -4,26 +4,26 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 
 import { MovieCard } from '@/components/shared/MovieCard'
-import type { MovieSummary } from '@/lib/api'
+import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
 
 export function EntityMovieGrid({
   title,
   eyebrow,
   description,
-  matcher,
+  browseParams,
 }: {
   title: string
   eyebrow: string
   description: string
-  matcher: (movie: MovieSummary) => boolean
+  browseParams: Record<string, string | number | undefined>
 }) {
   const catalogQuery = useQuery({
-    queryKey: ['catalog', 100],
-    queryFn: () => movieApi.getCatalog(100),
+    queryKey: ['entity-grid', title, JSON.stringify(browseParams)],
+    queryFn: () => movieApi.browseCatalog({ ...browseParams, page_size: 48, sort: 'hype' }),
   })
 
-  const items = (catalogQuery.data || []).filter(matcher)
+  const items = catalogQuery.data?.items || []
 
   return (
     <main className="page-shell">
@@ -45,10 +45,15 @@ export function EntityMovieGrid({
       <div className="section-header">
         <div>
           <h2>Tracked Titles</h2>
-          <p>{items.length} matching movies in the current catalog.</p>
+          <p>{catalogQuery.data?.total || 0} matching movies in the current catalog.</p>
         </div>
       </div>
-      {catalogQuery.isLoading ? <p className="subtle">Loading matching titles...</p> : <div className="section-grid">{items.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div>}
+      {catalogQuery.isLoading ? <LoadingState title="Loading matching titles" description="Building the entity page from the movie catalog." /> : null}
+      {catalogQuery.isError ? <ErrorState title="Entity page unavailable" description="The matching movie grid could not be loaded." /> : null}
+      {!catalogQuery.isLoading && !catalogQuery.isError && !items.length ? (
+        <EmptyState title="No matching titles" description="No movies in the current catalog matched this entity page yet." />
+      ) : null}
+      {!catalogQuery.isLoading && !catalogQuery.isError && items.length ? <div className="section-grid">{items.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div> : null}
     </main>
   )
 }

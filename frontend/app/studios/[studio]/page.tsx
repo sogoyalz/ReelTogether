@@ -1,5 +1,3 @@
-'use client'
-
 import { EntityMovieGrid } from '@/components/discovery/EntityMovieGrid'
 
 export default function StudioPage({ params }: { params: { studio: string } }) {
@@ -9,7 +7,7 @@ export default function StudioPage({ params }: { params: { studio: string } }) {
       eyebrow="Studio"
       title={studio}
       description={`Tracked titles currently associated with ${studio}.`}
-      matcher={(movie) => movie.studios.includes(studio)}
+      browseParams={{ studio }}
     />
   )
 }

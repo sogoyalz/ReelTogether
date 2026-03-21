@@ -1,0 +1,6 @@
+.env
+venv
+__pycache__
+*.pyc
+movie_analytics.db
+alembic/versions/__pycache__

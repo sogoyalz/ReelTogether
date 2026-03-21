@@ -1,4 +1,5 @@
 backend/.env
+backend/movie_analytics.db
 frontend/.env.local
 backend/venv/
 backend/__pycache__/

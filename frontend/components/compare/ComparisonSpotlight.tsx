@@ -36,6 +36,12 @@ const categoryMeta = [
     description: 'Strongest projected opening weekend.',
     format: (item: ComparisonItem) => formatCurrency(item.predicted_opening_weekend_usd),
   },
+  {
+    key: 'tmdb_popularity',
+    label: 'Popularity',
+    description: 'Highest current TMDB popularity signal.',
+    format: (item: ComparisonItem) => item.tmdb_popularity.toFixed(1),
+  },
 ]
 
 export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
@@ -92,8 +98,10 @@ export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
               <div className="genre-list">
                 <span className="genre-tag">Buzz {item.buzz_score}</span>
                 <span className="genre-tag">Search {item.google_trends_score}</span>
+                <span className="genre-tag">Popularity {item.tmdb_popularity.toFixed(1)}</span>
                 {item.imdb_rating ? <span className="genre-tag">IMDb {item.imdb_rating}</span> : null}
                 {item.rotten_tomatoes ? <span className="genre-tag">RT {item.rotten_tomatoes}</span> : null}
+                {item.audience_sentiment !== null ? <span className="genre-tag">Sentiment {Math.round(item.audience_sentiment * 100)}%</span> : null}
               </div>
               <div className="compare-stat-grid">
                 <div>
@@ -120,11 +128,25 @@ export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
                   <div className="metric-label">Franchise</div>
                   <div>{item.franchise || 'Standalone'}</div>
                 </div>
+                <div>
+                  <div className="metric-label">Confidence</div>
+                  <div>{item.prediction_confidence !== null ? `${Math.round(item.prediction_confidence * 100)}%` : 'n/a'}</div>
+                </div>
+                <div>
+                  <div className="metric-label">Domestic Total</div>
+                  <div>{formatCurrency(item.predicted_domestic_total_usd)}</div>
+                </div>
               </div>
               {item.streaming_on.length ? (
                 <div className="meta-line" style={{ marginTop: 14 }}>
                   <span className="meta-kicker">Streaming</span>
                   <span>{item.streaming_on.join(', ')}</span>
+                </div>
+              ) : null}
+              {item.key_themes.length ? (
+                <div className="meta-line" style={{ marginTop: 10, alignItems: 'flex-start' }}>
+                  <span className="meta-kicker">Research</span>
+                  <span>{item.key_themes.join(', ')}</span>
                 </div>
               ) : null}
               <div style={{ marginTop: 18 }}>

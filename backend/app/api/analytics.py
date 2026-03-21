@@ -15,6 +15,7 @@ from app.schemas.analytics import (
 )
 from app.db.session import get_db
 from app.repositories import movies as movie_repository
+from app.services.ai_foundation import get_ai_overview
 from app.services.catalog_enrichment import build_history, build_score_breakdown
 from app.services.catalog_enrichment import get_enrichment
 from app.services.omdb import fetch_movie_metadata
@@ -50,14 +51,15 @@ async def get_dashboard_snapshot(db: Session = Depends(get_db)):
         )
     trending = sorted(serialized, key=lambda movie: movie["buzz_score"], reverse=True)[:5]
     most_hyped = sorted(serialized, key=lambda movie: movie["hype_score"], reverse=True)[:5]
+    tracked_movies = len(serialized)
     return {
         "updated_at": datetime.utcnow(),
         "trending": trending,
         "most_hyped": most_hyped,
         "stats": {
-            "tracked_movies": len(serialized),
-            "average_hype_score": round(sum(movie["hype_score"] for movie in serialized) / len(serialized), 2),
-            "average_buzz_score": round(sum(movie["buzz_score"] for movie in serialized) / len(serialized), 2),
+            "tracked_movies": tracked_movies,
+            "average_hype_score": round(sum(movie["hype_score"] for movie in serialized) / tracked_movies, 2) if tracked_movies else 0.0,
+            "average_buzz_score": round(sum(movie["buzz_score"] for movie in serialized) / tracked_movies, 2) if tracked_movies else 0.0,
         },
     }
 
@@ -112,7 +114,12 @@ async def compare_movies(
     movie_ids: str = Query(..., description="Comma separated movie ids"),
     db: Session = Depends(get_db),
 ):
-    ids = [int(raw_id) for raw_id in movie_ids.split(",") if raw_id.strip()]
+    try:
+        ids = [int(raw_id) for raw_id in movie_ids.split(",") if raw_id.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="movie_ids must be a comma separated list of integers") from exc
+    if len(ids) < 2:
+        raise HTTPException(status_code=422, detail="At least two movie ids are required for comparison")
     items = []
     for movie_id in ids:
         movie = movie_repository.get_movie_by_id(db, movie_id)
@@ -121,6 +128,7 @@ async def compare_movies(
             raise HTTPException(status_code=404, detail=f"Movie {movie_id} not found")
         enrichment = get_enrichment(movie)
         omdb_metadata = fetch_movie_metadata(movie) or {}
+        ai_overview = get_ai_overview(db, movie_id)
         items.append(
             ComparisonEntry(
                 movie_id=movie.id,
@@ -135,11 +143,16 @@ async def compare_movies(
                 google_trends_score=analytics.google_trends_score,
                 sentiment_score=analytics.sentiment_score,
                 predicted_opening_weekend_usd=analytics.predicted_opening_weekend_usd,
+                predicted_domestic_total_usd=analytics.predicted_domestic_total_usd,
+                tmdb_popularity=movie.tmdb_popularity,
                 imdb_rating=omdb_metadata.get("imdb_rating"),
                 rotten_tomatoes=omdb_metadata.get("rotten_tomatoes"),
                 runtime=omdb_metadata.get("runtime"),
                 franchise=enrichment.get("franchise"),
                 streaming_on=enrichment.get("streaming_on", []),
+                audience_sentiment=ai_overview["sentiment"].sentiment_score if ai_overview else None,
+                prediction_confidence=ai_overview["prediction"].confidence_score if ai_overview else None,
+                key_themes=ai_overview["summary"].key_themes.split(", ") if ai_overview and ai_overview["summary"].key_themes else [],
             )
         )
 

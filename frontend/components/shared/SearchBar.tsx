@@ -17,6 +17,7 @@ export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
     queryKey: ['search-suggestions', deferredQuery],
     queryFn: () => movieApi.searchSuggestions(deferredQuery),
     enabled: deferredQuery.trim().length > 1,
+    staleTime: 5 * 60 * 1000,
   })
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {

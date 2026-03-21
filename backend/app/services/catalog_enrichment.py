@@ -250,9 +250,9 @@ CATALOG_ENRICHMENTS: dict[str, dict] = {
 }
 
 
-def get_enrichment(movie: Movie) -> dict:
+def get_enrichment(movie: Movie, allow_network: bool = False) -> dict:
     base = CATALOG_ENRICHMENTS.get(movie.slug, {})
-    tmdb = get_tmdb_movie_enrichment(movie) or {}
+    tmdb = get_tmdb_movie_enrichment(movie, allow_network=allow_network) or {}
 
     franchise = tmdb.get("franchise") or base.get("franchise")
     studios = tmdb.get("studios") or base.get("studios", [])

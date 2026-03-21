@@ -56,6 +56,16 @@ export interface MovieDetail extends MovieSummary {
     value_usd: number
   }[]
   backdrops: string[]
+  wikipedia_summary: string | null
+  wikipedia_url: string | null
+  wikipedia_categories: string[]
+  wikidata_id: string | null
+  wikidata_url: string | null
+  wikidata_label: string | null
+  wikidata_description: string | null
+  wikidata_instance_of: string[]
+  wikidata_genres: string[]
+  wikidata_countries: string[]
 }
 
 export interface CatalogFacets {
@@ -137,11 +147,55 @@ export interface ComparisonItem {
   google_trends_score: number
   sentiment_score: number
   predicted_opening_weekend_usd: number
+  predicted_domestic_total_usd: number
+  tmdb_popularity: number
   imdb_rating: string | null
   rotten_tomatoes: string | null
   runtime: string | null
   franchise: string | null
   streaming_on: string[]
+  audience_sentiment: number | null
+  prediction_confidence: number | null
+  key_themes: string[]
+}
+
+export interface MovieAIOverview {
+  sentiment: {
+    movie_id: number
+    snapshot_at: string
+    positive_count: number
+    neutral_count: number
+    negative_count: number
+    sentiment_score: number
+    sample_size: number
+    model_version: string
+  }
+  prediction: {
+    movie_id: number
+    snapshot_at: string
+    predicted_opening_weekend_usd: number
+    predicted_domestic_total_usd: number
+    confidence_score: number
+    feature_version: string
+    model_version: string
+  }
+  summary: {
+    movie_id: number
+    snapshot_at: string
+    audience_summary: string
+    critic_summary: string
+    key_themes: string[]
+    model_version: string
+  }
+  discussions: {
+    source: string
+    title: string
+    body: string
+    author: string | null
+    engagement_score: number
+    created_at: string
+    url: string | null
+  }[]
 }
 
 export interface ComparisonResponse {
@@ -200,6 +254,7 @@ export const movieApi = {
     (await api.get<MovieSummary[]>('/api/movies/released', { params: { limit } })).data,
   getMovieDetails: async (id: number) => (await api.get<MovieDetail>(`/api/movies/${id}`)).data,
   getMovieBySlug: async (slug: string) => (await api.get<MovieDetail>(`/api/movies/slug/${slug}`)).data,
+  getMovieAI: async (id: number) => (await api.get<MovieAIOverview>(`/api/ai/movie/${id}`)).data,
   getAnalytics: async (id: number) => (await api.get<MovieAnalytics>(`/api/analytics/movie/${id}`)).data,
   getAnalyticsHistory: async (id: number) =>
     (await api.get<AnalyticsHistoryResponse>(`/api/analytics/movie/${id}/history`)).data,

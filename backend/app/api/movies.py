@@ -8,10 +8,12 @@ from app.schemas.movie import CatalogFacets, MovieDetail, MovieSummary, Paginate
 from app.db.session import get_db
 from app.models.movie import Movie
 from app.repositories import movies as movie_repository
-from app.services.catalog_browser import CatalogBrowseFilters, browse_catalog
+from app.services.catalog_browser import CatalogBrowseFilters, browse_catalog, clear_browse_cache
 from app.services.catalog_enrichment import get_enrichment
 from app.services.omdb import fetch_movie_metadata
 from app.services.tmdb import sync_tmdb_catalog
+from app.services.wikidata import fetch_movie_wikidata
+from app.services.wikipedia import fetch_movie_wikipedia
 
 router = APIRouter()
 
@@ -23,10 +25,42 @@ def _latest_analytics(movie: Movie):
     )
 
 
-def _serialize_summary(movie: Movie) -> MovieSummary:
+def _analytics_payload(movie: Movie) -> dict:
     analytics = _latest_analytics(movie)
     if analytics is None:
-        raise HTTPException(status_code=500, detail=f"Analytics missing for movie {movie.id}")
+        return {
+            "trailer_url": None,
+            "youtube_views": 0,
+            "youtube_likes": 0,
+            "youtube_comments": 0,
+            "google_trends_score": 0.0,
+            "x_mentions": 0,
+            "reddit_mentions": 0,
+            "sentiment_score": 0.0,
+            "buzz_score": 0.0,
+            "hype_score": 0.0,
+            "predicted_opening_weekend_usd": 0.0,
+            "predicted_domestic_total_usd": 0.0,
+        }
+
+    return {
+        "trailer_url": analytics.trailer_url,
+        "youtube_views": analytics.youtube_views,
+        "youtube_likes": analytics.youtube_likes,
+        "youtube_comments": analytics.youtube_comments,
+        "google_trends_score": analytics.google_trends_score,
+        "x_mentions": analytics.x_mentions,
+        "reddit_mentions": analytics.reddit_mentions,
+        "sentiment_score": analytics.sentiment_score,
+        "buzz_score": analytics.buzz_score,
+        "hype_score": analytics.hype_score,
+        "predicted_opening_weekend_usd": analytics.predicted_opening_weekend_usd,
+        "predicted_domestic_total_usd": analytics.predicted_domestic_total_usd,
+    }
+
+
+def _serialize_summary(movie: Movie) -> MovieSummary:
+    analytics = _analytics_payload(movie)
     enrichment = get_enrichment(movie)
     omdb_metadata = fetch_movie_metadata(movie) or {}
 
@@ -42,8 +76,8 @@ def _serialize_summary(movie: Movie) -> MovieSummary:
         overview=movie.overview,
         genres=movie.genres,
         tmdb_popularity=movie.tmdb_popularity,
-        buzz_score=analytics.buzz_score,
-        hype_score=analytics.hype_score,
+        buzz_score=analytics["buzz_score"],
+        hype_score=analytics["hype_score"],
         franchise=enrichment["franchise"],
         studios=enrichment["studios"],
         streaming_on=enrichment["streaming_on"],
@@ -58,22 +92,21 @@ def _serialize_summary(movie: Movie) -> MovieSummary:
 
 
 def _serialize_detail(movie: Movie) -> MovieDetail:
-    analytics = _latest_analytics(movie)
-    if analytics is None:
-        raise HTTPException(status_code=500, detail=f"Analytics missing for movie {movie.id}")
-
+    analytics = _analytics_payload(movie)
     omdb_metadata = fetch_movie_metadata(movie) or {}
     enrichment = get_enrichment(movie)
+    wikipedia = fetch_movie_wikipedia(movie) or {}
+    wikidata = fetch_movie_wikidata(movie) or {}
 
     return MovieDetail(
         **_serialize_summary(movie).model_dump(),
-        trailer_url=analytics.trailer_url,
-        trailer_views=analytics.youtube_views,
-        social_mentions=analytics.x_mentions + analytics.reddit_mentions,
-        google_trends_score=analytics.google_trends_score,
-        sentiment_score=analytics.sentiment_score,
-        predicted_opening_weekend_usd=analytics.predicted_opening_weekend_usd,
-        predicted_domestic_total_usd=analytics.predicted_domestic_total_usd,
+        trailer_url=analytics["trailer_url"],
+        trailer_views=analytics["youtube_views"],
+        social_mentions=analytics["x_mentions"] + analytics["reddit_mentions"],
+        google_trends_score=analytics["google_trends_score"],
+        sentiment_score=analytics["sentiment_score"],
+        predicted_opening_weekend_usd=analytics["predicted_opening_weekend_usd"],
+        predicted_domestic_total_usd=analytics["predicted_domestic_total_usd"],
         imdb_id=omdb_metadata.get("imdb_id"),
         rated=omdb_metadata.get("rated"),
         runtime=omdb_metadata.get("runtime"),
@@ -88,6 +121,16 @@ def _serialize_detail(movie: Movie) -> MovieDetail:
         trailer_embed_url=enrichment["trailer_embed_url"],
         box_office_history=enrichment["box_office_history"],
         backdrops=enrichment.get("backdrops", []),
+        wikipedia_summary=wikipedia.get("summary"),
+        wikipedia_url=wikipedia.get("url"),
+        wikipedia_categories=wikipedia.get("categories", []),
+        wikidata_id=wikidata.get("id"),
+        wikidata_url=wikidata.get("url"),
+        wikidata_label=wikidata.get("label"),
+        wikidata_description=wikidata.get("description"),
+        wikidata_instance_of=wikidata.get("instance_of", []),
+        wikidata_genres=wikidata.get("genres", []),
+        wikidata_countries=wikidata.get("countries", []),
     )
 
 
@@ -183,6 +226,7 @@ async def get_movie_details_by_slug(slug: str, db: Session = Depends(get_db)):
 @router.post("/sync-tmdb", response_model=RefreshAnalyticsResponse)
 async def sync_movies_from_tmdb(db: Session = Depends(get_db)):
     result = sync_tmdb_catalog(db)
+    clear_browse_cache()
     return RefreshAnalyticsResponse(
         refreshed_movies=result.synced_movies,
         skipped_movies=0,

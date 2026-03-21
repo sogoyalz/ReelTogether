@@ -24,12 +24,19 @@ function CompareWorkspace() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialIds = parseSelectedIds(searchParams.get('ids'))
-  const [selectedIds, setSelectedIds] = useState<number[]>(initialIds.length >= 2 ? initialIds : [1, 2])
+  const [selectedIds, setSelectedIds] = useState<number[]>(initialIds)
   const [pickerQuery, setPickerQuery] = useState('')
+  const [pickerPage, setPickerPage] = useState(1)
 
   const moviesQuery = useQuery({
-    queryKey: ['compare-catalog'],
-    queryFn: () => movieApi.getCatalog(120),
+    queryKey: ['compare-catalog', pickerQuery, pickerPage],
+    queryFn: () =>
+      movieApi.browseCatalog({
+        q: pickerQuery || undefined,
+        sort: 'hype',
+        page: pickerPage,
+        page_size: 48,
+      }),
   })
 
   const comparisonQuery = useQuery({
@@ -40,24 +47,28 @@ function CompareWorkspace() {
 
   const selectedSet = new Set(selectedIds)
   const filteredCatalog = useMemo(() => {
-    const source = moviesQuery.data || []
-    const query = pickerQuery.trim().toLowerCase()
-    if (!query) {
-      return source
-    }
-    return source.filter((movie) =>
-      [movie.title, movie.franchise || '', movie.genres.join(' '), movie.studios.join(' ')]
-        .join(' ')
-        .toLowerCase()
-        .includes(query),
-    )
-  }, [moviesQuery.data, pickerQuery])
+    return moviesQuery.data?.items || []
+  }, [moviesQuery.data])
 
   useEffect(() => {
+    if (selectedIds.length >= 2 || !moviesQuery.data?.items.length) {
+      return
+    }
+    setSelectedIds(moviesQuery.data.items.slice(0, 2).map((movie) => movie.id))
+  }, [moviesQuery.data, selectedIds.length])
+
+  useEffect(() => {
+    if (selectedIds.length < 2) {
+      return
+    }
     const params = new URLSearchParams(searchParams.toString())
     params.set('ids', selectedIds.join(','))
     router.replace(`/compare?${params.toString()}`)
   }, [router, searchParams, selectedIds])
+
+  useEffect(() => {
+    setPickerPage(1)
+  }, [pickerQuery])
 
   function toggleId(movieId: number) {
     setSelectedIds((current) => {
@@ -111,6 +122,19 @@ function CompareWorkspace() {
             </button>
           ))}
         </div>
+        {moviesQuery.data ? (
+          <div className="hero-actions" style={{ marginTop: 18 }}>
+            <button className="cta-button secondary-button" disabled={moviesQuery.data.page <= 1} onClick={() => setPickerPage((current) => Math.max(1, current - 1))} type="button">
+              Previous titles
+            </button>
+            <span className="eyebrow">
+              Picker page {moviesQuery.data.page} of {moviesQuery.data.total_pages}
+            </span>
+            <button className="cta-button secondary-button" disabled={moviesQuery.data.page >= moviesQuery.data.total_pages} onClick={() => setPickerPage((current) => current + 1)} type="button">
+              More titles
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {moviesQuery.isLoading ? <LoadingState title="Loading compare catalog" description="Preparing movies for the compare workspace." /> : null}

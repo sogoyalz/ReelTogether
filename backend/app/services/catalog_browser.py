@@ -9,6 +9,10 @@ from app.models.movie import Movie
 from app.repositories import movies as movie_repository
 from app.services.catalog_enrichment import get_enrichment
 from app.services.omdb import fetch_movie_metadata
+from app.services.cache import TTLCache
+
+
+_BROWSE_CACHE: TTLCache[CatalogBrowseResult] | None = None
 
 
 @dataclass
@@ -39,9 +43,36 @@ class CatalogBrowseResult:
 
 
 def browse_catalog(db: Session, filters: CatalogBrowseFilters) -> CatalogBrowseResult:
+    global _BROWSE_CACHE
+    if _BROWSE_CACHE is None:
+        _BROWSE_CACHE = TTLCache(ttl_seconds=45)
+
+    cache_key = "|".join(
+        [
+            filters.query or "",
+            filters.status or "",
+            filters.genre or "",
+            filters.studio or "",
+            filters.franchise or "",
+            filters.streaming or "",
+            str(filters.year or ""),
+            str(filters.min_rating or ""),
+            str(filters.min_hype or ""),
+            str(filters.min_popularity or ""),
+            filters.sort,
+            str(filters.page),
+            str(filters.page_size),
+        ]
+    )
+
+    return _BROWSE_CACHE.get_or_set(cache_key, lambda: _build_browse_result(db, filters))
+
+
+def _build_browse_result(db: Session, filters: CatalogBrowseFilters) -> CatalogBrowseResult:
     candidates = movie_repository.list_movies(db)
-    facets = _build_facets(candidates)
-    filtered = [movie for movie in candidates if _matches(movie, filters)]
+    prepared = [_prepare_movie(movie) for movie in candidates]
+    facets = _build_facets(prepared)
+    filtered = [item for item in prepared if _matches(item, filters)]
     sorted_movies = _sort_movies(filtered, filters.sort)
     total = len(sorted_movies)
     total_pages = max(1, ceil(total / filters.page_size)) if filters.page_size else 1
@@ -49,7 +80,7 @@ def browse_catalog(db: Session, filters: CatalogBrowseFilters) -> CatalogBrowseR
     start = (page - 1) * filters.page_size
     end = start + filters.page_size
     return CatalogBrowseResult(
-        movies=sorted_movies[start:end],
+        movies=[item["movie"] for item in sorted_movies[start:end]],
         total=total,
         page=page,
         page_size=filters.page_size,
@@ -58,9 +89,19 @@ def browse_catalog(db: Session, filters: CatalogBrowseFilters) -> CatalogBrowseR
     )
 
 
-def _matches(movie: Movie, filters: CatalogBrowseFilters) -> bool:
-    enrichment = get_enrichment(movie)
-    metadata = fetch_movie_metadata(movie) or {}
+def _prepare_movie(movie: Movie) -> dict:
+    return {
+        "movie": movie,
+        "enrichment": get_enrichment(movie),
+        "metadata": fetch_movie_metadata(movie) or {},
+        "analytics": _latest_analytics(movie),
+    }
+
+
+def _matches(item: dict, filters: CatalogBrowseFilters) -> bool:
+    movie: Movie = item["movie"]
+    enrichment = item["enrichment"]
+    metadata = item["metadata"]
     text = " ".join(
         [
             movie.title,
@@ -76,8 +117,12 @@ def _matches(movie: Movie, filters: CatalogBrowseFilters) -> bool:
 
     if filters.query and filters.query.lower() not in text:
         return False
-    if filters.status and movie.status != filters.status:
-        return False
+    if filters.status:
+        if filters.status == "future":
+            if movie.status == "released":
+                return False
+        elif movie.status != filters.status:
+            return False
     if filters.genre and filters.genre not in movie.genres:
         return False
     if filters.studio and filters.studio not in enrichment.get("studios", []):
@@ -97,33 +142,35 @@ def _matches(movie: Movie, filters: CatalogBrowseFilters) -> bool:
     return True
 
 
-def _sort_movies(movies: list[Movie], sort: str) -> list[Movie]:
-    def rating(movie: Movie) -> float:
-        return _parse_rating((fetch_movie_metadata(movie) or {}).get("imdb_rating"))
+def _sort_movies(items: list[dict], sort: str) -> list[dict]:
+    def rating(item: dict) -> float:
+        return _parse_rating(item["metadata"].get("imdb_rating"))
 
-    def hype(movie: Movie) -> float:
-        return _latest_hype(movie)
+    def hype(item: dict) -> float:
+        analytics = item["analytics"]
+        return analytics.hype_score if analytics else 0.0
 
-    def buzz(movie: Movie) -> float:
-        analytics = _latest_analytics(movie)
+    def buzz(item: dict) -> float:
+        analytics = item["analytics"]
         return analytics.buzz_score if analytics else 0.0
 
-    def release(movie: Movie) -> float:
+    def release(item: dict) -> float:
+        movie: Movie = item["movie"]
         return movie.release_date.toordinal()
 
     sorters = {
-        "rating": lambda movie: (rating(movie), hype(movie), movie.title.lower()),
-        "popularity": lambda movie: (movie.tmdb_popularity, hype(movie), movie.title.lower()),
-        "release": lambda movie: (release(movie), hype(movie), movie.title.lower()),
-        "buzz": lambda movie: (buzz(movie), hype(movie), movie.title.lower()),
-        "title": lambda movie: (movie.title.lower(),),
-        "hype": lambda movie: (hype(movie), movie.tmdb_popularity, movie.title.lower()),
+        "rating": lambda item: (rating(item), hype(item), item["movie"].title.lower()),
+        "popularity": lambda item: (item["movie"].tmdb_popularity, hype(item), item["movie"].title.lower()),
+        "release": lambda item: (release(item), hype(item), item["movie"].title.lower()),
+        "buzz": lambda item: (buzz(item), hype(item), item["movie"].title.lower()),
+        "title": lambda item: (item["movie"].title.lower(),),
+        "hype": lambda item: (hype(item), item["movie"].tmdb_popularity, item["movie"].title.lower()),
     }
     sorter = sorters.get(sort, sorters["hype"])
-    return sorted(movies, key=sorter, reverse=sort != "title")
+    return sorted(items, key=sorter, reverse=sort != "title")
 
 
-def _build_facets(movies: list[Movie]) -> dict[str, list]:
+def _build_facets(items: list[dict]) -> dict[str, list]:
     genres: set[str] = set()
     franchises: set[str] = set()
     studios: set[str] = set()
@@ -131,8 +178,9 @@ def _build_facets(movies: list[Movie]) -> dict[str, list]:
     statuses: set[str] = set()
     years: set[int] = set()
 
-    for movie in movies:
-        enrichment = get_enrichment(movie)
+    for item in items:
+        movie: Movie = item["movie"]
+        enrichment = item["enrichment"]
         genres.update(movie.genres)
         statuses.add(movie.status)
         years.add(movie.release_date.year)
@@ -149,6 +197,11 @@ def _build_facets(movies: list[Movie]) -> dict[str, list]:
         "statuses": sorted(statuses),
         "years": sorted(years, reverse=True),
     }
+
+
+def clear_browse_cache() -> None:
+    if _BROWSE_CACHE is not None:
+        _BROWSE_CACHE.clear()
 
 
 def _latest_analytics(movie: Movie):

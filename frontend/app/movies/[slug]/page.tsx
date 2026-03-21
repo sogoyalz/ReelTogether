@@ -29,8 +29,13 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
     queryFn: () => movieApi.getAnalyticsHistory(movieQuery.data!.id),
     enabled: Boolean(movieQuery.data?.id),
   })
+  const aiQuery = useQuery({
+    queryKey: ['movie-ai', movieQuery.data?.id],
+    queryFn: () => movieApi.getMovieAI(movieQuery.data!.id),
+    enabled: Boolean(movieQuery.data?.id),
+  })
 
-  if (movieQuery.isLoading || analyticsQuery.isLoading || historyQuery.isLoading) {
+  if (movieQuery.isLoading || analyticsQuery.isLoading || historyQuery.isLoading || aiQuery.isLoading) {
     return (
       <main className="page-shell">
         <LoadingState title="Loading movie analytics" description="Building the full movie detail surface and charts." />
@@ -38,7 +43,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
     )
   }
 
-  if (movieQuery.isError || analyticsQuery.isError || historyQuery.isError) {
+  if (movieQuery.isError || analyticsQuery.isError || historyQuery.isError || aiQuery.isError) {
     return (
       <main className="page-shell">
         <ErrorState title="Movie detail unavailable" description="This movie page could not be loaded right now." />
@@ -46,7 +51,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
     )
   }
 
-  if (!movieQuery.data || !analyticsQuery.data || !historyQuery.data) {
+  if (!movieQuery.data || !analyticsQuery.data || !historyQuery.data || !aiQuery.data) {
     return (
       <main className="page-shell">
         <EmptyState title="Movie not found" description="The requested movie is not in the current catalog." />
@@ -57,6 +62,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
   const movie = movieQuery.data
   const analytics = analyticsQuery.data
   const history = historyQuery.data
+  const ai = aiQuery.data
 
   return (
     <main className="page-shell">
@@ -76,25 +82,25 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
           <div className="panel">
             <div className="section-header" style={{ marginTop: 0 }}>
               <div>
-                <h3>Editorial Snapshot</h3>
-                <p>A compact read on ratings, release timing, franchise context, and where the title currently sits.</p>
+                <h3>AI Snapshot</h3>
+                <p>Stored sentiment, prediction confidence, and summary outputs generated from the current movie data.</p>
               </div>
             </div>
             <div className="overview-grid">
               <div className="metric-card">
-                <div className="metric-label">Release Status</div>
-                <div className="metric-value overview-title">{movie.status}</div>
-                <p className="meta">{movie.franchise || 'Standalone release'}</p>
+                <div className="metric-label">Audience Sentiment</div>
+                <div className="metric-value overview-title">{Math.round(ai.sentiment.sentiment_score * 100)}%</div>
+                <p className="meta">{ai.sentiment.sample_size} scored discussion samples</p>
               </div>
               <div className="metric-card">
-                <div className="metric-label">Ratings Stack</div>
-                <div className="metric-value overview-title">{movie.imdb_rating ? `${movie.imdb_rating}/10` : 'n/a'}</div>
-                <p className="meta">{movie.rotten_tomatoes || 'No Rotten Tomatoes score yet'}</p>
+                <div className="metric-label">Prediction Confidence</div>
+                <div className="metric-value overview-title">{Math.round(ai.prediction.confidence_score * 100)}%</div>
+                <p className="meta">{ai.prediction.model_version}</p>
               </div>
               <div className="metric-card">
-                <div className="metric-label">Streaming</div>
-                <div className="metric-value overview-title">{movie.streaming_on[0] || 'n/a'}</div>
-                <p className="meta">{movie.streaming_on.slice(1).join(', ') || 'No streaming availability listed yet'}</p>
+                <div className="metric-label">Opening Forecast</div>
+                <div className="metric-value overview-title">{formatCurrency(ai.prediction.predicted_opening_weekend_usd)}</div>
+                <p className="meta">Domestic total {formatCurrency(ai.prediction.predicted_domestic_total_usd)}</p>
               </div>
             </div>
           </div>
@@ -198,6 +204,131 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div className="panel">
+            <div className="section-header" style={{ marginTop: 0 }}>
+              <div>
+                <h3>Audience Summary</h3>
+                <p>Stored AI summary blocks and discussion themes for this title.</p>
+              </div>
+            </div>
+            <div className="stack">
+              <div className="metric-card">
+                <div className="metric-label">Audience Read</div>
+                <p className="subtle">{ai.summary.audience_summary}</p>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Critic Read</div>
+                <p className="subtle">{ai.summary.critic_summary}</p>
+              </div>
+              <div className="genre-list">
+                {ai.summary.key_themes.map((theme) => (
+                  <span className="genre-tag" key={theme}>{theme}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+          {movie.wikipedia_summary ? (
+            <div className="panel">
+              <div className="section-header" style={{ marginTop: 0 }}>
+                <div>
+                  <h3>Wikipedia Context</h3>
+                  <p>Extra background context pulled in for a cleaner editorial read on the movie.</p>
+                </div>
+              </div>
+              <div className="stack">
+                <div className="metric-card">
+                  <p className="subtle">{movie.wikipedia_summary}</p>
+                  {movie.wikipedia_url ? (
+                    <a href={movie.wikipedia_url} rel="noopener noreferrer" target="_blank">
+                      Read full article on Wikipedia
+                    </a>
+                  ) : null}
+                </div>
+                {movie.wikipedia_categories.length ? (
+                  <div className="genre-list">
+                    {movie.wikipedia_categories.map((category) => (
+                      <span className="genre-tag" key={category}>{category}</span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {movie.wikidata_description || movie.wikidata_instance_of.length || movie.wikidata_genres.length ? (
+            <div className="panel">
+              <div className="section-header" style={{ marginTop: 0 }}>
+                <div>
+                  <h3>Wikidata Signals</h3>
+                  <p>Structured facts pulled from Wikidata for cleaner classification and linking.</p>
+                </div>
+              </div>
+              <div className="stack">
+                {movie.wikidata_description ? (
+                  <div className="metric-card">
+                    <div className="metric-label">Description</div>
+                    <p className="subtle">{movie.wikidata_description}</p>
+                    {movie.wikidata_url ? (
+                      <a href={movie.wikidata_url} rel="noopener noreferrer" target="_blank">
+                        Open Wikidata entry
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+                {movie.wikidata_instance_of.length ? (
+                  <div>
+                    <div className="metric-label">Instance Of</div>
+                    <div className="genre-list" style={{ marginTop: 10 }}>
+                      {movie.wikidata_instance_of.map((item) => (
+                        <span className="genre-tag" key={item}>{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {movie.wikidata_genres.length ? (
+                  <div>
+                    <div className="metric-label">Wikidata Genres</div>
+                    <div className="genre-list" style={{ marginTop: 10 }}>
+                      {movie.wikidata_genres.map((item) => (
+                        <span className="genre-tag" key={item}>{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {movie.wikidata_countries.length ? (
+                  <div>
+                    <div className="metric-label">Countries</div>
+                    <div className="genre-list" style={{ marginTop: 10 }}>
+                      {movie.wikidata_countries.map((item) => (
+                        <span className="genre-tag" key={item}>{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          <div className="panel">
+            <div className="section-header" style={{ marginTop: 0 }}>
+              <div>
+                <h3>Discussion Signals</h3>
+                <p>Recent stored discussion items that feed the sentiment and summary layer.</p>
+              </div>
+            </div>
+            <div className="stack">
+              {ai.discussions.map((item) => (
+                <div className="metric-card" key={`${item.source}-${item.title}`}>
+                  <div className="title-row">
+                    <div>
+                      <h4>{item.title}</h4>
+                      <p className="meta">{item.source} • {item.author || 'unknown author'}</p>
+                    </div>
+                    <div className="score-pill">{Math.round(item.engagement_score)}</div>
+                  </div>
+                  <p className="subtle" style={{ marginTop: 12 }}>{item.body}</p>
+                </div>
+              ))}
+            </div>
           </div>
           {movie.trailer_embed_url ? (
             <div className="panel">

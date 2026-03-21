@@ -1,5 +1,3 @@
-'use client'
-
 import { EntityMovieGrid } from '@/components/discovery/EntityMovieGrid'
 
 export default function FranchisePage({ params }: { params: { franchise: string } }) {
@@ -9,7 +7,7 @@ export default function FranchisePage({ params }: { params: { franchise: string 
       eyebrow="Franchise"
       title={franchise}
       description={`Franchise view across current and upcoming titles tied to ${franchise}.`}
-      matcher={(movie) => movie.franchise === franchise}
+      browseParams={{ franchise }}
     />
   )
 }

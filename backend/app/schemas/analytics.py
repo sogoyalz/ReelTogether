@@ -68,11 +68,16 @@ class ComparisonEntry(BaseModel):
     google_trends_score: float
     sentiment_score: float
     predicted_opening_weekend_usd: float
+    predicted_domestic_total_usd: float
+    tmdb_popularity: float
     imdb_rating: str | None = None
     rotten_tomatoes: str | None = None
     runtime: str | None = None
     franchise: str | None = None
     streaming_on: list[str] = []
+    audience_sentiment: float | None = None
+    prediction_confidence: float | None = None
+    key_themes: list[str] = []
 
 
 class CompareMoviesResponse(BaseModel):

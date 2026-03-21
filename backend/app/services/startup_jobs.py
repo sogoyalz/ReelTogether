@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+import logging
+from threading import Lock
+
+from app.core.config import settings
+from app.db.session import SessionLocal
+from app.services.ai_foundation import ensure_ai_foundation
+from app.services.background_jobs import job_registry
+from app.services.bootstrap import seed_database_if_empty
+from app.services.catalog_browser import clear_browse_cache
+from app.services.tmdb import sync_tmdb_catalog
+from app.services.youtube_analytics import refresh_all_movie_analytics
+
+logger = logging.getLogger(__name__)
+
+_startup_job_lock = Lock()
+_startup_job_id: str | None = None
+
+
+def enqueue_startup_sync() -> str:
+    global _startup_job_id
+    with _startup_job_lock:
+        existing = job_registry.get(_startup_job_id) if _startup_job_id else None
+        if existing and existing.status in {"queued", "running"}:
+            return existing.id
+        job = job_registry.enqueue("startup-sync", _run_startup_sync)
+        _startup_job_id = job.id
+        return job.id
+
+
+def run_startup_sync_once() -> dict:
+    return _run_startup_sync()
+
+
+def get_startup_sync_status() -> dict:
+    job = job_registry.get(_startup_job_id) if _startup_job_id else None
+    return {
+        "enabled": settings.ENABLE_STARTUP_SYNC,
+        "async": settings.STARTUP_SYNC_ASYNC,
+        "job": None if job is None else {
+            "id": job.id,
+            "name": job.name,
+            "status": job.status,
+            "queued_at": job.queued_at,
+            "started_at": job.started_at,
+            "finished_at": job.finished_at,
+            "error": job.error,
+            "result": job.result,
+        },
+    }
+
+
+def enqueue_tmdb_sync() -> str:
+    return job_registry.enqueue("tmdb-sync", _run_tmdb_sync).id
+
+
+def enqueue_youtube_refresh() -> str:
+    return job_registry.enqueue("youtube-refresh", _run_youtube_refresh).id
+
+
+def enqueue_ai_refresh() -> str:
+    return job_registry.enqueue("ai-refresh", _run_ai_refresh).id
+
+
+def _run_startup_sync() -> dict:
+    result = {
+        "seeded_catalog": False,
+        "tmdb": None,
+        "youtube": None,
+        "ai_foundation": False,
+    }
+    with SessionLocal() as db:
+        if settings.tmdb_api_configured:
+            tmdb_result = sync_tmdb_catalog(db)
+            clear_browse_cache()
+            result["tmdb"] = {
+                "synced_movies": tmdb_result.synced_movies,
+                "created_movies": tmdb_result.created_movies,
+                "updated_movies": tmdb_result.updated_movies,
+                "failed_movies": tmdb_result.failed_movies,
+            }
+            logger.info("Startup TMDB sync complete: %s", result["tmdb"])
+        else:
+            seed_database_if_empty(db)
+            result["seeded_catalog"] = True
+
+        ensure_ai_foundation(db)
+        result["ai_foundation"] = True
+
+        if settings.youtube_api_configured:
+            youtube_result = refresh_all_movie_analytics(db)
+            clear_browse_cache()
+            result["youtube"] = {
+                "refreshed_movies": youtube_result.refreshed_movies,
+                "skipped_movies": youtube_result.skipped_movies,
+                "failed_movies": youtube_result.failed_movies,
+            }
+            logger.info("Startup YouTube refresh complete: %s", result["youtube"])
+
+    return result
+
+
+def _run_tmdb_sync() -> dict:
+    with SessionLocal() as db:
+        result = sync_tmdb_catalog(db)
+        clear_browse_cache()
+        ensure_ai_foundation(db)
+        return {
+            "synced_movies": result.synced_movies,
+            "created_movies": result.created_movies,
+            "updated_movies": result.updated_movies,
+            "failed_movies": result.failed_movies,
+        }
+
+
+def _run_youtube_refresh() -> dict:
+    with SessionLocal() as db:
+        result = refresh_all_movie_analytics(db)
+        clear_browse_cache()
+        return {
+            "refreshed_movies": result.refreshed_movies,
+            "skipped_movies": result.skipped_movies,
+            "failed_movies": result.failed_movies,
+        }
+
+
+def _run_ai_refresh() -> dict:
+    with SessionLocal() as db:
+        ensure_ai_foundation(db)
+        return {"ai_foundation": True}

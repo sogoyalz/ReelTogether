@@ -28,30 +28,46 @@ def _latest_analytics(movie: Movie):
     )
 
 
+def _ensure_search_inventory(db: Session, query: str, minimum_matches: int, import_limit: int) -> list[Movie]:
+    matches = movie_repository.search_movies(db, query)
+    if len(query) < 3 or len(matches) >= minimum_matches:
+        return matches
+
+    sync_tmdb_search_results(db, query, limit=import_limit)
+    return movie_repository.search_movies(db, query)
+
+
 @router.get("", response_model=PaginatedMovieSummaries)
 async def search_movies(
     q: str = Query(..., min_length=1),
+    status: str | None = Query(default=None),
     genre: str | None = Query(default=None),
     franchise: str | None = Query(default=None),
     studio: str | None = Query(default=None),
     year: int | None = Query(default=None),
     min_rating: float | None = Query(default=None, ge=0, le=10),
+    min_hype: float | None = Query(default=None, ge=0, le=100),
+    min_popularity: float | None = Query(default=None, ge=0),
+    sort: str = Query(default="hype"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=48),
     db: Session = Depends(get_db),
 ):
     query = q.strip().lower()
-    sync_tmdb_search_results(db, query)
+    _ensure_search_inventory(db, query, minimum_matches=6, import_limit=4)
     result = browse_catalog(
         db,
         CatalogBrowseFilters(
             query=query,
+            status=status if status and status != "all" else None,
             genre=genre if genre and genre != "all" else None,
             franchise=franchise if franchise and franchise != "all" else None,
             studio=studio if studio and studio != "all" else None,
             year=year,
             min_rating=min_rating,
-            sort="hype",
+            min_hype=min_hype,
+            min_popularity=min_popularity,
+            sort=sort,
             page=page,
             page_size=page_size,
         ),
@@ -102,8 +118,11 @@ async def search_movies(
 
 @router.get("/suggest", response_model=list[AutocompleteSuggestion])
 async def suggest_movies(q: str = Query(..., min_length=1), limit: int = Query(default=6, ge=1, le=10), db: Session = Depends(get_db)):
-    sync_tmdb_search_results(db, q.strip().lower(), limit=limit)
-    matches = movie_repository.search_movies(db, q.strip().lower())[:limit]
+    query = q.strip().lower()
+    matches = movie_repository.search_movies(db, query)
+    if len(query) >= 4 and len(matches) < max(2, limit // 2):
+        matches = _ensure_search_inventory(db, query, minimum_matches=max(2, limit // 2), import_limit=min(limit, 3))
+    matches = matches[:limit]
     return [
         AutocompleteSuggestion(
             id=movie.id,
