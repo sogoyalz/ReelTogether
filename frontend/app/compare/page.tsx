@@ -113,7 +113,7 @@ function CompareWorkspace() {
               style={{
                 opacity: selectedSet.has(movie.id) ? 1 : 0.55,
                 background: selectedSet.has(movie.id)
-                  ? 'linear-gradient(135deg, #ff8e3c, #ff4d6d)'
+                  ? 'linear-gradient(135deg, #f2f2f2, #9a9a9a)'
                   : 'rgba(255,255,255,0.08)',
               }}
               type="button"

@@ -21,9 +21,9 @@ export function TrendChart({ history }: { history: AnalyticsHistoryResponse }) {
             <XAxis dataKey="snapshot_date" stroke="#98a2b3" />
             <YAxis stroke="#98a2b3" />
             <Tooltip formatter={(value: number) => formatCompactNumber(value)} />
-            <Line type="monotone" dataKey="hype_score" stroke="#ff8e3c" strokeWidth={3} dot={false} />
-            <Line type="monotone" dataKey="buzz_score" stroke="#4ea1ff" strokeWidth={3} dot={false} />
-            <Line type="monotone" dataKey="google_trends_score" stroke="#8cf0c8" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="hype_score" stroke="#f1f1f1" strokeWidth={3} dot={false} />
+            <Line type="monotone" dataKey="buzz_score" stroke="#bcbcbc" strokeWidth={3} dot={false} />
+            <Line type="monotone" dataKey="google_trends_score" stroke="#7f7f7f" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>

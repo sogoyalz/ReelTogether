@@ -4,13 +4,17 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.repositories import movies as movie_repository
 from app.schemas.ai import (
+    CriticAudienceComparisonResponse,
     DiscussionItem,
     MovieAIOverviewResponse,
     MoviePredictionSnapshotResponse,
+    PredictionFeatureImportanceResponse,
     PublicOpinionResponse,
     PublicOpinionSourceBreakdown,
+    ReviewPerspectiveResponse,
     MovieSentimentSnapshotResponse,
     MovieSummarySnapshotResponse,
+    ThemeSignalResponse,
 )
 from app.services.ai_foundation import ensure_ai_foundation_for_movie, get_ai_overview
 
@@ -49,8 +53,17 @@ async def get_movie_ai_overview(movie_id: int, db: Session = Depends(get_db)):
             predicted_opening_weekend_usd=overview["prediction"].predicted_opening_weekend_usd,
             predicted_domestic_total_usd=overview["prediction"].predicted_domestic_total_usd,
             confidence_score=overview["prediction"].confidence_score,
+            opening_weekend_low_usd=overview["prediction_payload"]["opening_weekend_low_usd"],
+            opening_weekend_high_usd=overview["prediction_payload"]["opening_weekend_high_usd"],
+            domestic_total_low_usd=overview["prediction_payload"]["domestic_total_low_usd"],
+            domestic_total_high_usd=overview["prediction_payload"]["domestic_total_high_usd"],
+            methodology=overview["prediction_payload"]["methodology"],
             feature_version=overview["prediction"].feature_version,
             model_version=overview["prediction"].model_version,
+            feature_importance=[
+                PredictionFeatureImportanceResponse(**item)
+                for item in overview["prediction_payload"]["feature_importance"]
+            ],
         ),
         summary=MovieSummarySnapshotResponse(
             movie_id=movie_id,
@@ -72,6 +85,35 @@ async def get_movie_ai_overview(movie_id: int, db: Session = Depends(get_db)):
                 for item in overview["public_opinion"]["source_breakdown"]
             ],
             highlighted_quotes=overview["public_opinion"]["highlighted_quotes"],
+        ),
+        critic_vs_audience=CriticAudienceComparisonResponse(
+            critics=ReviewPerspectiveResponse(
+                label=overview["critic_vs_audience"]["critics"].label,
+                item_count=overview["critic_vs_audience"]["critics"].item_count,
+                sentiment_score=overview["critic_vs_audience"]["critics"].sentiment_score,
+                summary=overview["critic_vs_audience"]["critics"].summary,
+                top_themes=overview["critic_vs_audience"]["critics"].top_themes,
+                positive_drivers=overview["critic_vs_audience"]["critics"].positive_drivers,
+                negative_drivers=overview["critic_vs_audience"]["critics"].negative_drivers,
+                highlighted_quotes=overview["critic_vs_audience"]["critics"].highlighted_quotes,
+            ),
+            audience=ReviewPerspectiveResponse(
+                label=overview["critic_vs_audience"]["audience"].label,
+                item_count=overview["critic_vs_audience"]["audience"].item_count,
+                sentiment_score=overview["critic_vs_audience"]["audience"].sentiment_score,
+                summary=overview["critic_vs_audience"]["audience"].summary,
+                top_themes=overview["critic_vs_audience"]["audience"].top_themes,
+                positive_drivers=overview["critic_vs_audience"]["audience"].positive_drivers,
+                negative_drivers=overview["critic_vs_audience"]["audience"].negative_drivers,
+                highlighted_quotes=overview["critic_vs_audience"]["audience"].highlighted_quotes,
+            ),
+            consensus_themes=overview["critic_vs_audience"]["consensus_themes"],
+            divergence_themes=overview["critic_vs_audience"]["divergence_themes"],
+            alignment_score=overview["critic_vs_audience"]["alignment_score"],
+            theme_signals=[
+                ThemeSignalResponse(**item)
+                for item in overview["critic_vs_audience"]["theme_signals"]
+            ],
         ),
         discussions=[
             DiscussionItem(

@@ -25,7 +25,7 @@ export function BoxOfficeHistoryChart({ movie }: { movie: MovieDetail }) {
             <XAxis dataKey="label" stroke="#98a2b3" />
             <YAxis stroke="#98a2b3" tickFormatter={formatCurrency} />
             <Tooltip formatter={(value: number) => formatCurrency(value)} />
-            <Area dataKey="value_usd" stroke="#ff8e3c" fill="rgba(255,142,60,0.28)" />
+            <Area dataKey="value_usd" stroke="#f1f1f1" fill="rgba(255,255,255,0.22)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>

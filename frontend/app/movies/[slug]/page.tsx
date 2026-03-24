@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 
 import { BoxOfficeHistoryChart } from '@/components/movies/BoxOfficeHistoryChart'
+import { CriticAudienceDashboard } from '@/components/movies/CriticAudienceDashboard'
+import { ForecastConfidenceCard } from '@/components/movies/ForecastConfidenceCard'
 import { HypeGauge } from '@/components/movies/HypeGauge'
 import { InterestChart } from '@/components/movies/InterestChart'
 import { MovieHero } from '@/components/movies/MovieHero'
@@ -35,7 +37,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
     enabled: Boolean(movieQuery.data?.id),
   })
 
-  if (movieQuery.isLoading || analyticsQuery.isLoading || historyQuery.isLoading || aiQuery.isLoading) {
+  if (movieQuery.isLoading) {
     return (
       <main className="page-shell">
         <LoadingState title="Loading movie analytics" description="Building the full movie detail surface and charts." />
@@ -43,7 +45,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
     )
   }
 
-  if (movieQuery.isError || analyticsQuery.isError || historyQuery.isError || aiQuery.isError) {
+  if (movieQuery.isError) {
     return (
       <main className="page-shell">
         <ErrorState title="Movie detail unavailable" description="This movie page could not be loaded right now." />
@@ -51,7 +53,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
     )
   }
 
-  if (!movieQuery.data || !analyticsQuery.data || !historyQuery.data || !aiQuery.data) {
+  if (!movieQuery.data) {
     return (
       <main className="page-shell">
         <EmptyState title="Movie not found" description="The requested movie is not in the current catalog." />
@@ -63,6 +65,31 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
   const analytics = analyticsQuery.data
   const history = historyQuery.data
   const ai = aiQuery.data
+  const analyticsUnavailable = analyticsQuery.isError || !analytics
+  const predictionFactors = analytics
+    ? [
+        {
+          label: 'Trailer reach',
+          value: formatCompactNumber(analytics.youtube_views),
+          description: 'Trailer views, likes, and comments are used as the strongest top-of-funnel demand signal.',
+        },
+        {
+          label: 'Conversation volume',
+          value: formatCompactNumber(analytics.social_mentions),
+          description: 'Cross-platform discussion volume helps estimate opening-weekend momentum and awareness.',
+        },
+        {
+          label: 'Search demand',
+          value: `${Math.round(analytics.google_trends_score)}`,
+          description: 'Search interest acts as a proxy for broad intent beyond core fandom.',
+        },
+        {
+          label: 'Sentiment',
+          value: `${Math.round(analytics.sentiment_score * 100)}%`,
+          description: 'Audience positivity affects how efficiently early buzz can convert into stronger legs.',
+        },
+      ]
+    : []
 
   return (
     <main className="page-shell">
@@ -74,38 +101,74 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
         {movie.genres.map((genre) => <Link className="genre-tag" href={`/genres/${encodeURIComponent(genre)}`} key={genre}>{genre}</Link>)}
       </div>
       <div style={{ marginTop: 18 }}>
-        <MovieHero analytics={analytics} movie={movie} />
+        {analyticsQuery.isLoading ? (
+          <LoadingState title="Loading hero analytics" description="Pulling live movie-level metrics for the hero surface." />
+        ) : analytics ? (
+          <MovieHero analytics={analytics} movie={movie} />
+        ) : (
+          <SectionNotice
+            description="The page can still show metadata, cast, studios, trailers, and research context while analytics reload."
+            title="Analytics temporarily unavailable"
+          />
+        )}
       </div>
 
       <div className="detail-grid" style={{ marginTop: 28 }}>
         <div className="stack">
-          <div className="panel">
-            <div className="section-header" style={{ marginTop: 0 }}>
-              <div>
-                <h3>AI Snapshot</h3>
-                <p>Stored sentiment, prediction confidence, and summary outputs generated from the current movie data.</p>
+          {ai ? (
+            <div className="panel">
+              <div className="section-header" style={{ marginTop: 0 }}>
+                <div>
+                  <h3>AI Snapshot</h3>
+                  <p>Stored sentiment, prediction confidence, and summary outputs generated from the current movie data.</p>
+                </div>
+              </div>
+              <div className="overview-grid">
+                <div className="metric-card">
+                  <div className="metric-label">Audience Sentiment</div>
+                  <div className="metric-value overview-title">{Math.round(ai.sentiment.sentiment_score * 100)}%</div>
+                  <p className="meta">{ai.sentiment.sample_size} scored discussion samples</p>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Prediction Confidence</div>
+                  <div className="metric-value overview-title">{Math.round(ai.prediction.confidence_score * 100)}%</div>
+                  <p className="meta">{ai.prediction.model_version}</p>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">Opening Forecast</div>
+                  <div className="metric-value overview-title">{formatCurrency(ai.prediction.predicted_opening_weekend_usd)}</div>
+                  <p className="meta">Domestic total {formatCurrency(ai.prediction.predicted_domestic_total_usd)}</p>
+                </div>
               </div>
             </div>
-            <div className="overview-grid">
-              <div className="metric-card">
-                <div className="metric-label">Audience Sentiment</div>
-                <div className="metric-value overview-title">{Math.round(ai.sentiment.sentiment_score * 100)}%</div>
-                <p className="meta">{ai.sentiment.sample_size} scored discussion samples</p>
-              </div>
-              <div className="metric-card">
-                <div className="metric-label">Prediction Confidence</div>
-                <div className="metric-value overview-title">{Math.round(ai.prediction.confidence_score * 100)}%</div>
-                <p className="meta">{ai.prediction.model_version}</p>
-              </div>
-              <div className="metric-card">
-                <div className="metric-label">Opening Forecast</div>
-                <div className="metric-value overview-title">{formatCurrency(ai.prediction.predicted_opening_weekend_usd)}</div>
-                <p className="meta">Domestic total {formatCurrency(ai.prediction.predicted_domestic_total_usd)}</p>
-              </div>
-            </div>
-          </div>
-          <InterestChart analytics={analytics} />
-          <TrendChart history={history} />
+          ) : aiQuery.isLoading ? (
+            <LoadingState title="Loading AI snapshot" description="Pulling generated sentiment, forecasts, and summaries." />
+          ) : (
+            <SectionNotice
+              description="The movie record loaded, but the AI summary layer has not been generated for this title yet."
+              title="AI research layer unavailable"
+            />
+          )}
+          {analytics ? (
+            <InterestChart analytics={analytics} />
+          ) : analyticsQuery.isLoading ? (
+            <LoadingState title="Loading interest signals" description="Fetching live trailer and conversation metrics." />
+          ) : (
+            <SectionNotice
+              description="Trailer, social, and forecast metrics could not be loaded right now."
+              title="Interest signals unavailable"
+            />
+          )}
+          {history ? (
+            <TrendChart history={history} />
+          ) : historyQuery.isLoading ? (
+            <LoadingState title="Loading trend history" description="Pulling historical buzz and hype points." />
+          ) : (
+            <SectionNotice
+              description="Historical snapshots are missing for this title, so the trend chart is hidden for now."
+              title="Trend history unavailable"
+            />
+          )}
           <BoxOfficeHistoryChart movie={movie} />
           <div className="panel">
             <div className="section-header" style={{ marginTop: 0 }}>
@@ -166,23 +229,23 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
                 </tr>
                 <tr>
                   <td>YouTube Likes</td>
-                  <td>{formatCompactNumber(analytics.youtube_likes)}</td>
+                  <td>{analytics ? formatCompactNumber(analytics.youtube_likes) : 'Not available'}</td>
                 </tr>
                 <tr>
                   <td>YouTube Comments</td>
-                  <td>{formatCompactNumber(analytics.youtube_comments)}</td>
+                  <td>{analytics ? formatCompactNumber(analytics.youtube_comments) : 'Not available'}</td>
                 </tr>
                 <tr>
                   <td>X Mentions</td>
-                  <td>{formatCompactNumber(analytics.x_mentions)}</td>
+                  <td>{analytics ? formatCompactNumber(analytics.x_mentions) : 'Not available'}</td>
                 </tr>
                 <tr>
                   <td>Reddit Mentions</td>
-                  <td>{formatCompactNumber(analytics.reddit_mentions)}</td>
+                  <td>{analytics ? formatCompactNumber(analytics.reddit_mentions) : 'Not available'}</td>
                 </tr>
                 <tr>
                   <td>Predicted Domestic Total</td>
-                  <td>{formatCurrency(analytics.predicted_domestic_total_usd)}</td>
+                  <td>{analytics ? formatCurrency(analytics.predicted_domestic_total_usd) : 'Not available'}</td>
                 </tr>
                 <tr>
                   <td>IMDb Votes</td>
@@ -195,7 +258,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
                 <tr>
                   <td>Trailer</td>
                   <td>
-                    {analytics.trailer_url ? (
+                    {analytics?.trailer_url ? (
                       <a href={analytics.trailer_url} rel="noopener noreferrer" target="_blank">
                         Watch on YouTube
                       </a>
@@ -205,89 +268,118 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
               </tbody>
             </table>
           </div>
-          <div className="panel">
-            <div className="section-header" style={{ marginTop: 0 }}>
-              <div>
-                <h3>Audience Summary</h3>
-                <p>Stored AI summary blocks and discussion themes for this title.</p>
-              </div>
-            </div>
-            <div className="stack">
-              <div className="metric-card">
-                <div className="metric-label">Audience Read</div>
-                <p className="subtle">{ai.summary.audience_summary}</p>
-              </div>
-              <div className="metric-card">
-                <div className="metric-label">Critic Read</div>
-                <p className="subtle">{ai.summary.critic_summary}</p>
-              </div>
-              <div className="genre-list">
-                {ai.summary.key_themes.map((theme) => (
-                  <span className="genre-tag" key={theme}>{theme}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="panel">
-            <div className="section-header" style={{ marginTop: 0 }}>
-              <div>
-                <h3>Public Opinion</h3>
-                <p>What viewers are broadly saying across the collected discussion sources, especially YouTube comments.</p>
-              </div>
-            </div>
-            <div className="stack">
-              <div className="metric-card">
-                <div className="metric-label">Overall Read</div>
-                <p className="subtle">{ai.public_opinion.overall_summary}</p>
-              </div>
-              <div className="overview-grid">
-                <div className="metric-card">
-                  <div className="metric-label">Positive</div>
-                  <div className="metric-value overview-title">{ai.public_opinion.positive_count}</div>
+          {ai ? (
+            <>
+              <div className="panel">
+                <div className="section-header" style={{ marginTop: 0 }}>
+                  <div>
+                    <h3>Audience Summary</h3>
+                    <p>Stored AI summary blocks and discussion themes for this title.</p>
+                  </div>
                 </div>
-                <div className="metric-card">
-                  <div className="metric-label">Neutral</div>
-                  <div className="metric-value overview-title">{ai.public_opinion.neutral_count}</div>
-                </div>
-                <div className="metric-card">
-                  <div className="metric-label">Negative</div>
-                  <div className="metric-value overview-title">{ai.public_opinion.negative_count}</div>
-                </div>
-                <div className="metric-card">
-                  <div className="metric-label">Average Sentiment</div>
-                  <div className="metric-value overview-title">{Math.round(ai.public_opinion.average_sentiment * 100)}%</div>
-                </div>
-              </div>
-              {ai.public_opinion.top_themes.length ? (
-                <div className="genre-list">
-                  {ai.public_opinion.top_themes.map((theme) => (
-                    <span className="genre-tag" key={theme}>{theme}</span>
-                  ))}
-                </div>
-              ) : null}
-              {ai.public_opinion.source_breakdown.length ? (
-                <div className="compare-stat-grid">
-                  {ai.public_opinion.source_breakdown.map((item) => (
-                    <div key={item.source}>
-                      <div className="metric-label">{item.source}</div>
-                      <div>{item.item_count} items</div>
-                      <div className="meta">sentiment {Math.round(item.average_sentiment * 100)}%</div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {ai.public_opinion.highlighted_quotes.length ? (
                 <div className="stack">
-                  {ai.public_opinion.highlighted_quotes.map((quote, index) => (
-                    <div className="metric-card" key={`${index}-${quote.slice(0, 24)}`}>
-                      <div className="metric-label">Viewer Highlight</div>
-                      <p className="subtle">{quote}</p>
-                    </div>
-                  ))}
+                  <div className="metric-card">
+                    <div className="metric-label">Audience Read</div>
+                    <p className="subtle">{ai.summary.audience_summary}</p>
+                  </div>
+                  <div className="metric-card">
+                    <div className="metric-label">Critic Read</div>
+                    <p className="subtle">{ai.summary.critic_summary}</p>
+                  </div>
+                  <div className="genre-list">
+                    {ai.summary.key_themes.map((theme) => (
+                      <span className="genre-tag" key={theme}>{theme}</span>
+                    ))}
+                  </div>
                 </div>
-              ) : null}
-            </div>
-          </div>
+              </div>
+              <div className="panel">
+                <div className="section-header" style={{ marginTop: 0 }}>
+                  <div>
+                    <h3>What Critics Are Saying</h3>
+                    <p>Professional-review posture based on critic-side discussion, ratings context, and prestige signals.</p>
+                  </div>
+                </div>
+                <div className="stack">
+                  <div className="metric-card">
+                    <div className="metric-label">Critical Read</div>
+                    <p className="subtle">{ai.critic_vs_audience.critics.summary}</p>
+                  </div>
+                  <div className="compare-stat-grid">
+                    <div className="metric-card">
+                      <div className="metric-label">Positive Drivers</div>
+                      <div>{ai.critic_vs_audience.critics.positive_drivers.join(', ') || 'n/a'}</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Negative Drivers</div>
+                      <div>{ai.critic_vs_audience.critics.negative_drivers.join(', ') || 'n/a'}</div>
+                    </div>
+                  </div>
+                  {ai.critic_vs_audience.critics.top_themes.length ? (
+                    <div className="genre-list">
+                      {ai.critic_vs_audience.critics.top_themes.map((theme) => (
+                        <span className="genre-tag" key={theme}>{theme}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="panel">
+                <div className="section-header" style={{ marginTop: 0 }}>
+                  <div>
+                    <h3>What Audiences Are Saying</h3>
+                    <p>Normal viewer reaction summarized from Reddit and YouTube-style discussion, with theme extraction and sentiment.</p>
+                  </div>
+                </div>
+                <div className="stack">
+                  <div className="metric-card">
+                    <div className="metric-label">Audience Read</div>
+                    <p className="subtle">{ai.critic_vs_audience.audience.summary}</p>
+                  </div>
+                  <div className="metric-card">
+                    <div className="metric-label">Public Opinion Read</div>
+                    <p className="subtle">{ai.public_opinion.overall_summary}</p>
+                  </div>
+                  <div className="overview-grid">
+                    <div className="metric-card">
+                      <div className="metric-label">Positive</div>
+                      <div className="metric-value overview-title">{ai.public_opinion.positive_count}</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Neutral</div>
+                      <div className="metric-value overview-title">{ai.public_opinion.neutral_count}</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Negative</div>
+                      <div className="metric-value overview-title">{ai.public_opinion.negative_count}</div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="metric-label">Average Sentiment</div>
+                      <div className="metric-value overview-title">{Math.round(ai.public_opinion.average_sentiment * 100)}%</div>
+                    </div>
+                  </div>
+                  {ai.critic_vs_audience.audience.top_themes.length ? (
+                    <div className="genre-list">
+                      {ai.critic_vs_audience.audience.top_themes.map((theme) => (
+                        <span className="genre-tag" key={theme}>{theme}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {ai.public_opinion.highlighted_quotes.length ? (
+                    <div className="stack">
+                      {ai.public_opinion.highlighted_quotes.map((quote, index) => (
+                        <div className="metric-card" key={`${index}-${quote.slice(0, 24)}`}>
+                          <div className="metric-label">Viewer Highlight</div>
+                          <p className="subtle">{quote}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <CriticAudienceDashboard ai={ai} />
+            </>
+          ) : null}
           {movie.wikipedia_summary ? (
             <div className="panel">
               <div className="section-header" style={{ marginTop: 0 }}>
@@ -368,28 +460,30 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
               </div>
             </div>
           ) : null}
-          <div className="panel">
-            <div className="section-header" style={{ marginTop: 0 }}>
-              <div>
-                <h3>Discussion Signals</h3>
-                <p>Recent stored discussion items that feed the sentiment and summary layer.</p>
+          {ai ? (
+            <div className="panel">
+              <div className="section-header" style={{ marginTop: 0 }}>
+                <div>
+                  <h3>Discussion Signals</h3>
+                  <p>Recent stored discussion items that feed the sentiment and summary layer.</p>
+                </div>
+              </div>
+              <div className="stack">
+                {ai.discussions.map((item) => (
+                  <div className="metric-card" key={`${item.source}-${item.title}`}>
+                    <div className="title-row">
+                      <div>
+                        <h4>{item.title}</h4>
+                        <p className="meta">{item.source} • {item.author || 'unknown author'}</p>
+                      </div>
+                      <div className="score-pill">{Math.round(item.engagement_score)}</div>
+                    </div>
+                    <p className="subtle" style={{ marginTop: 12 }}>{item.body}</p>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="stack">
-              {ai.discussions.map((item) => (
-                <div className="metric-card" key={`${item.source}-${item.title}`}>
-                  <div className="title-row">
-                    <div>
-                      <h4>{item.title}</h4>
-                      <p className="meta">{item.source} • {item.author || 'unknown author'}</p>
-                    </div>
-                    <div className="score-pill">{Math.round(item.engagement_score)}</div>
-                  </div>
-                  <p className="subtle" style={{ marginTop: 12 }}>{item.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          ) : null}
           {movie.trailer_embed_url ? (
             <div className="panel">
               <div className="section-header" style={{ marginTop: 0 }}>
@@ -430,8 +524,53 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
           ) : null}
         </div>
         <div className="stack">
-          <HypeGauge analytics={analytics} />
-          <ScoreBreakdownCard analytics={analytics} />
+          {analytics ? <HypeGauge analytics={analytics} /> : null}
+          {analytics ? <ScoreBreakdownCard analytics={analytics} /> : null}
+          {analyticsUnavailable ? (
+            <SectionNotice
+              description="The right-rail score modules are hidden until analytics data is available again."
+              title="Score cards unavailable"
+            />
+          ) : null}
+          {ai ? <ForecastConfidenceCard ai={ai} /> : null}
+          {ai ? (
+            <div className="panel">
+              <div className="section-header" style={{ marginTop: 0 }}>
+                <div>
+                  <h3>Prediction Method</h3>
+                  <p>Feature-level interpretation behind the current opening weekend and domestic forecast.</p>
+                </div>
+              </div>
+              <div className="stack">
+                <div className="metric-card">
+                  <div className="metric-label">Current Forecast</div>
+                  <div className="metric-value overview-title">{formatCurrency(ai.prediction.predicted_opening_weekend_usd)}</div>
+                  <p className="meta">
+                    Domestic total forecast {formatCurrency(ai.prediction.predicted_domestic_total_usd)} with {Math.round(ai.prediction.confidence_score * 100)}% confidence.
+                  </p>
+                </div>
+                {predictionFactors.length ? (
+                  <div className="stack">
+                    {predictionFactors.map((factor) => (
+                      <div className="metric-card" key={factor.label}>
+                        <div className="title-row">
+                          <div>
+                            <div className="metric-label">{factor.label}</div>
+                            <p className="subtle" style={{ marginTop: 8 }}>{factor.description}</p>
+                          </div>
+                          <div className="score-pill">{factor.value}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="metric-card">
+                  <div className="metric-label">Model Layer</div>
+                  <p className="subtle">{ai.prediction.methodology}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="panel">
             <div className="section-header" style={{ marginTop: 0 }}>
               <div>
@@ -461,5 +600,18 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
         </div>
       </div>
     </main>
+  )
+}
+
+function SectionNotice({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="panel">
+      <div className="section-header" style={{ marginTop: 0 }}>
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+      </div>
+    </div>
   )
 }

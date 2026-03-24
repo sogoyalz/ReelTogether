@@ -32,6 +32,7 @@ export function BuzzRanking() {
       <table className="table">
         <thead>
           <tr>
+            <th>Rank</th>
             <th>Movie</th>
             <th>Release</th>
             <th>Buzz</th>
@@ -39,10 +40,13 @@ export function BuzzRanking() {
           </tr>
         </thead>
         <tbody>
-          {data.trending.map((movie) => (
-            <tr key={movie.id}>
+          {data.trending.map((movie, index) => (
+            <tr className="buzz-table-row" key={movie.id}>
               <td>
-                <Link href={`/movies/${movie.slug}`}>{movie.title}</Link>
+                <span className="rank-pill">#{index + 1}</span>
+              </td>
+              <td>
+                <Link className="table-link" href={`/movies/${movie.slug}`}>{movie.title}</Link>
               </td>
               <td>{formatReleaseDate(movie.release_date)}</td>
               <td>{formatCompactNumber(movie.buzz_score)}</td>

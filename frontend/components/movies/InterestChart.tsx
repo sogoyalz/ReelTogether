@@ -28,7 +28,7 @@ export function InterestChart({ analytics }: { analytics: MovieAnalytics }) {
             <XAxis dataKey="name" stroke="#98a2b3" />
             <YAxis stroke="#98a2b3" tickFormatter={formatCompactNumber} />
             <Tooltip formatter={(value: number) => formatCompactNumber(value)} />
-            <Bar dataKey="value" fill="#ff8e3c" radius={[10, 10, 0, 0]} />
+            <Bar dataKey="value" fill="#f1f1f1" radius={[10, 10, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

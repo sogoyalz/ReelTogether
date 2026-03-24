@@ -174,8 +174,20 @@ export interface MovieAIOverview {
     predicted_opening_weekend_usd: number
     predicted_domestic_total_usd: number
     confidence_score: number
+    opening_weekend_low_usd: number
+    opening_weekend_high_usd: number
+    domestic_total_low_usd: number
+    domestic_total_high_usd: number
+    methodology: string
     feature_version: string
     model_version: string
+    feature_importance: {
+      label: string
+      value: number
+      impact_score: number
+      direction: string
+      explanation: string
+    }[]
   }
   summary: {
     movie_id: number
@@ -198,6 +210,37 @@ export interface MovieAIOverview {
       average_sentiment: number
     }[]
     highlighted_quotes: string[]
+  }
+  critic_vs_audience: {
+    critics: {
+      label: string
+      item_count: number
+      sentiment_score: number
+      summary: string
+      top_themes: string[]
+      positive_drivers: string[]
+      negative_drivers: string[]
+      highlighted_quotes: string[]
+    }
+    audience: {
+      label: string
+      item_count: number
+      sentiment_score: number
+      summary: string
+      top_themes: string[]
+      positive_drivers: string[]
+      negative_drivers: string[]
+      highlighted_quotes: string[]
+    }
+    consensus_themes: string[]
+    divergence_themes: string[]
+    alignment_score: number
+    theme_signals: {
+      theme: string
+      critic_weight: number
+      audience_weight: number
+      gap: number
+    }[]
   }
   discussions: {
     source: string

@@ -29,20 +29,20 @@ def fetch_movie_wikipedia(movie: Movie) -> dict[str, str | list[str] | None] | N
     for candidate in candidates:
         try:
             page = _wiki.page(candidate)
+            if not page.exists():
+                continue
+
+            summary = _clean_summary(page.summary)
+            metadata = {
+                "title": page.title,
+                "summary": summary,
+                "url": page.fullurl or f"{WIKIPEDIA_BASE_URL}{quote(page.title.replace(' ', '_'))}",
+                "categories": _top_categories(page),
+            }
+            _CACHE[cache_key] = metadata
+            return metadata
         except Exception:  # noqa: BLE001
             continue
-        if not page.exists():
-            continue
-
-        summary = _clean_summary(page.summary)
-        metadata = {
-            "title": page.title,
-            "summary": summary,
-            "url": page.fullurl or f"{WIKIPEDIA_BASE_URL}{quote(page.title.replace(' ', '_'))}",
-            "categories": _top_categories(page),
-        }
-        _CACHE[cache_key] = metadata
-        return metadata
 
     _CACHE[cache_key] = None
     return None

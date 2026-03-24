@@ -109,6 +109,60 @@ In production, set `ADMIN_API_KEY` and send it as the `X-Admin-Key` header.
 docker compose up --build
 ```
 
+### Render
+
+Use Render as a `Blueprint`, not as a single Docker service from the repo root.
+
+This repo contains 2 separate services:
+
+- backend in [`backend/Dockerfile`](/Users/souravgoyal/Desktop/moviess/backend/Dockerfile)
+- frontend in [`frontend/Dockerfile`](/Users/souravgoyal/Desktop/moviess/frontend/Dockerfile)
+
+The Render blueprint file is [`render.yaml`](/Users/souravgoyal/Desktop/moviess/render.yaml).
+
+#### Recommended Render flow
+
+1. Push the repo to GitHub.
+2. In Render, choose `New +` -> `Blueprint`.
+3. Select this repository.
+4. Let Render create both services from [`render.yaml`](/Users/souravgoyal/Desktop/moviess/render.yaml).
+
+#### If you create services manually
+
+Backend service:
+
+- Root Directory: `backend`
+- Dockerfile Path: `./Dockerfile`
+- Health Check Path: `/health/ready`
+
+Frontend service:
+
+- Root Directory: `frontend`
+- Dockerfile Path: `./Dockerfile`
+
+Do not point Render at the repo root as a single Docker service, because there is no root-level `Dockerfile`.
+
+#### Required Render environment variables
+
+Backend:
+
+- `ENVIRONMENT=production`
+- `ENABLE_DOCS=false`
+- `AUTO_CREATE_TABLES=false`
+- `DATABASE_URL=...`
+- `REDIS_URL=...`
+- `TMDB_API_KEY=...`
+- `YOUTUBE_API_KEY=...`
+- `OMDB_API_KEY=...`
+- `SECRET_KEY=...`
+- `ADMIN_API_KEY=...`
+- `CORS_ORIGINS=["https://your-frontend-url.onrender.com"]`
+- `TRUSTED_HOSTS=["your-backend-url.onrender.com"]`
+
+Frontend:
+
+- `API_BASE_URL=https://your-backend-url.onrender.com`
+
 ### Backend
 
 The backend container serves FastAPI on port `8000`.

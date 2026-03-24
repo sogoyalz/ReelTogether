@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { ArrowUpRight } from 'lucide-react'
 
 import type { MovieSummary } from '@/lib/api'
 import { formatReleaseDate } from '@/lib/formatters'
@@ -13,17 +14,24 @@ export function MovieCard({ movie }: { movie: MovieSummary }) {
 
   return (
     <Link className="movie-card" href={`/movies/${movie.slug}`}>
-      {artwork ? (
-        <img
-          alt={movie.title}
-          className="movie-poster"
-          src={artwork}
-        />
-      ) : (
-        <div className="movie-poster movie-poster-fallback">
-          <span>{movie.title}</span>
+      <div className="movie-card-media">
+        {artwork ? (
+          <img
+            alt={movie.title}
+            className="movie-poster"
+            src={artwork}
+          />
+        ) : (
+          <div className="movie-poster movie-poster-fallback">
+            <span>{movie.title}</span>
+          </div>
+        )}
+        <div className="movie-card-spotlight" />
+        <div className="movie-card-hoverbar">
+          <span>Open analysis</span>
+          <ArrowUpRight size={16} />
         </div>
-      )}
+      </div>
       <div className="movie-card-body">
         <div className="title-row">
           <div>

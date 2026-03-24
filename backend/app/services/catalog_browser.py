@@ -10,6 +10,7 @@ from app.repositories import movies as movie_repository
 from app.services.catalog_enrichment import get_enrichment
 from app.services.omdb import fetch_movie_metadata
 from app.services.cache import TTLCache
+from app.services.semantic_search import matches_semantic_query, semantic_query_score
 
 
 _BROWSE_CACHE: TTLCache[CatalogBrowseResult] | None = None
@@ -90,11 +91,14 @@ def _build_browse_result(db: Session, filters: CatalogBrowseFilters) -> CatalogB
 
 
 def _prepare_movie(movie: Movie) -> dict:
+    enrichment = get_enrichment(movie)
+    metadata = fetch_movie_metadata(movie) or {}
     return {
         "movie": movie,
-        "enrichment": get_enrichment(movie),
-        "metadata": fetch_movie_metadata(movie) or {},
+        "enrichment": enrichment,
+        "metadata": metadata,
         "analytics": _latest_analytics(movie),
+        "semantic_score": 0.0,
     }
 
 
@@ -102,20 +106,19 @@ def _matches(item: dict, filters: CatalogBrowseFilters) -> bool:
     movie: Movie = item["movie"]
     enrichment = item["enrichment"]
     metadata = item["metadata"]
-    text = " ".join(
-        [
-            movie.title,
-            movie.overview or "",
-            enrichment.get("franchise") or "",
-            " ".join(movie.genres),
-            " ".join(enrichment.get("studios", [])),
-            " ".join(enrichment.get("cast", [])),
-            " ".join(enrichment.get("directors", [])),
-            " ".join(enrichment.get("writers", [])),
-        ]
-    ).lower()
+    item["semantic_score"] = semantic_query_score(
+        query=filters.query,
+        movie=movie,
+        enrichment=enrichment,
+        metadata=metadata,
+    )
 
-    if filters.query and filters.query.lower() not in text:
+    if filters.query and not matches_semantic_query(
+        query=filters.query,
+        movie=movie,
+        enrichment=enrichment,
+        metadata=metadata,
+    ):
         return False
     if filters.status:
         if filters.status == "future":
@@ -158,13 +161,16 @@ def _sort_movies(items: list[dict], sort: str) -> list[dict]:
         movie: Movie = item["movie"]
         return movie.release_date.toordinal()
 
+    def semantic(item: dict) -> float:
+        return item.get("semantic_score", 0.0)
+
     sorters = {
-        "rating": lambda item: (rating(item), hype(item), item["movie"].title.lower()),
-        "popularity": lambda item: (item["movie"].tmdb_popularity, hype(item), item["movie"].title.lower()),
-        "release": lambda item: (release(item), hype(item), item["movie"].title.lower()),
-        "buzz": lambda item: (buzz(item), hype(item), item["movie"].title.lower()),
-        "title": lambda item: (item["movie"].title.lower(),),
-        "hype": lambda item: (hype(item), item["movie"].tmdb_popularity, item["movie"].title.lower()),
+        "rating": lambda item: (semantic(item), rating(item), hype(item), item["movie"].title.lower()),
+        "popularity": lambda item: (semantic(item), item["movie"].tmdb_popularity, hype(item), item["movie"].title.lower()),
+        "release": lambda item: (semantic(item), release(item), hype(item), item["movie"].title.lower()),
+        "buzz": lambda item: (semantic(item), buzz(item), hype(item), item["movie"].title.lower()),
+        "title": lambda item: (-semantic(item), item["movie"].title.lower()),
+        "hype": lambda item: (semantic(item), hype(item), item["movie"].tmdb_popularity, item["movie"].title.lower()),
     }
     sorter = sorters.get(sort, sorters["hype"])
     return sorted(items, key=sorter, reverse=sort != "title")

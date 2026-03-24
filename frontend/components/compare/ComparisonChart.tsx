@@ -29,10 +29,10 @@ export function ComparisonChart({ items }: { items: ComparisonItem[] }) {
             <YAxis stroke="#98a2b3" />
             <Tooltip />
             <Legend />
-            <Bar dataKey="buzz" fill="#ff8e3c" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="hype" fill="#4ea1ff" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="search" fill="#8cf0c8" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="popularity" fill="#f5c06b" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="buzz" fill="#efefef" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="hype" fill="#c9c9c9" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="search" fill="#9d9d9d" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="popularity" fill="#6f6f6f" radius={[8, 8, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

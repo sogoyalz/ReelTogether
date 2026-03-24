@@ -144,14 +144,14 @@ def _fetch_video_statistics(video_ids: list[str]) -> dict[str, dict[str, int]]:
     aggregated: dict[str, dict[str, int]] = {}
 
     for batch in batches:
-        query = (
-            f"{YOUTUBE_VIDEOS_ENDPOINT}?"
-            f"{urlencode({
-                'part': 'statistics',
-                'id': ','.join(batch),
-                'fields': 'items(id,statistics(viewCount,likeCount,commentCount))',
-                'key': settings.YOUTUBE_API_KEY,
-            })}"
+        query = _build_youtube_query(
+            YOUTUBE_VIDEOS_ENDPOINT,
+            {
+                "part": "statistics",
+                "id": ",".join(batch),
+                "fields": "items(id,statistics(viewCount,likeCount,commentCount))",
+                "key": settings.YOUTUBE_API_KEY,
+            },
         )
         try:
             with urlopen(query, timeout=10) as response:
@@ -177,16 +177,16 @@ def _fetch_video_statistics(video_ids: list[str]) -> dict[str, dict[str, int]]:
 
 
 def _fetch_video_comments(video_id: str, limit: int = 8) -> list[dict[str, Any]]:
-    query = (
-        f"{YOUTUBE_COMMENTS_ENDPOINT}?"
-        f"{urlencode({
-            'part': 'snippet',
-            'videoId': video_id,
-            'maxResults': min(limit, 20),
-            'order': 'relevance',
-            'textFormat': 'plainText',
-            'key': settings.YOUTUBE_API_KEY,
-        })}"
+    query = _build_youtube_query(
+        YOUTUBE_COMMENTS_ENDPOINT,
+        {
+            "part": "snippet",
+            "videoId": video_id,
+            "maxResults": min(limit, 20),
+            "order": "relevance",
+            "textFormat": "plainText",
+            "key": settings.YOUTUBE_API_KEY,
+        },
     )
     try:
         with urlopen(query, timeout=10) as response:
@@ -305,3 +305,7 @@ def _score_comment_sentiment(text: str) -> str:
     if negative > positive:
         return "negative"
     return "neutral"
+
+
+def _build_youtube_query(endpoint: str, params: dict[str, Any]) -> str:
+    return f"{endpoint}?{urlencode(params)}"
