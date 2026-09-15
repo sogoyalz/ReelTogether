@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     ENABLE_RAG: bool = False
     ENABLE_DOCS: bool = True
     ENABLE_STARTUP_SYNC: bool = True
+    ENABLE_JOB_WORKER: bool = True
+    ENABLE_PERIODIC_SYNC: bool = False
     ENABLE_RATE_LIMIT: bool = True
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = 120
     RATE_LIMIT_BURST_REQUESTS: int = 20

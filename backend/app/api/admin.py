@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, HTTPException
 
 from app.core.config import settings
-from app.services.background_jobs import job_registry, serialize_job
+from app.services.background_jobs import job_registry, serialize_job, QueueFull
 from app.services.startup_jobs import (
     enqueue_ai_refresh,
     enqueue_startup_sync,
@@ -12,6 +12,16 @@ from app.services.startup_jobs import (
 )
 
 router = APIRouter()
+
+
+def enqueue_response(enqueue):
+    try:
+        job_id = enqueue()
+    except QueueFull:
+        raise HTTPException(503, "Maintenance queue is full; retry later", headers={"Retry-After": "60"}) from None
+    job = job_registry.get(job_id)
+    return {"job_id": job_id, "status": job.status}
+
 
 
 def _authorize_admin(x_admin_key: str | None = Header(default=None)) -> None:
@@ -39,26 +49,22 @@ def get_job(job_id: str, x_admin_key: str | None = Header(default=None)):
 @router.post("/jobs/startup-sync")
 def run_startup_sync(x_admin_key: str | None = Header(default=None)):
     _authorize_admin(x_admin_key)
-    job_id = enqueue_startup_sync()
-    return {"job_id": job_id, "status": "queued"}
+    return enqueue_response(enqueue_startup_sync)
 
 
 @router.post("/jobs/tmdb-sync")
 def run_tmdb_sync(x_admin_key: str | None = Header(default=None)):
     _authorize_admin(x_admin_key)
-    job_id = enqueue_tmdb_sync()
-    return {"job_id": job_id, "status": "queued"}
+    return enqueue_response(enqueue_tmdb_sync)
 
 
 @router.post("/jobs/youtube-refresh")
 def run_youtube_refresh(x_admin_key: str | None = Header(default=None)):
     _authorize_admin(x_admin_key)
-    job_id = enqueue_youtube_refresh()
-    return {"job_id": job_id, "status": "queued"}
+    return enqueue_response(enqueue_youtube_refresh)
 
 
 @router.post("/jobs/ai-refresh")
 def run_ai_refresh(x_admin_key: str | None = Header(default=None)):
     _authorize_admin(x_admin_key)
-    job_id = enqueue_ai_refresh()
-    return {"job_id": job_id, "status": "queued"}
+    return enqueue_response(enqueue_ai_refresh)

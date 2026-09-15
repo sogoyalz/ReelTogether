@@ -5,7 +5,7 @@ Responsibilities:
   - Application lifecycle (startup / shutdown)
   - Middleware stack (CORS, GZip, rate-limit, trusted-host, request context)
   - Router registration
-  - Background scheduler: TMDB + YouTube refresh every 6 hours
+  - Optional database-backed maintenance worker
   - Health / readiness endpoints
 """
 from __future__ import annotations
@@ -32,9 +32,6 @@ from app.services.schema_health import assert_schema_ready
 from app.services.bootstrap import initialize_database
 from app.services.redis_store import redis_health
 from app.services.startup_jobs import (
-    enqueue_startup_sync,
-    enqueue_tmdb_sync,
-    enqueue_youtube_refresh,
     get_startup_sync_status,
     run_startup_sync_once,
 )
@@ -137,25 +134,8 @@ app.include_router(admin.router,    prefix=f"{settings.API_V1_PREFIX}/admin",   
 # ---------------------------------------------------------------------------
 # Background scheduler — periodic data refresh
 # ---------------------------------------------------------------------------
-_SCHEDULER_INTERVAL_SECONDS = 6 * 60 * 60   # 6 hours
-_scheduler_thread: threading.Thread | None = None
-_scheduler_stop = threading.Event()
-
-
-def _scheduler_loop() -> None:
-    """Run TMDB + YouTube refresh every 6 hours in a daemon thread."""
-    logger.info("Background scheduler started (interval=%dh)", _SCHEDULER_INTERVAL_SECONDS // 3600)
-    while not _scheduler_stop.wait(timeout=_SCHEDULER_INTERVAL_SECONDS):
-        logger.info("Scheduled refresh: enqueueing TMDB sync + YouTube refresh")
-        try:
-            enqueue_tmdb_sync()
-        except Exception:
-            logger.exception("Scheduled TMDB sync failed to enqueue")
-        try:
-            enqueue_youtube_refresh()
-        except Exception:
-            logger.exception("Scheduled YouTube refresh failed to enqueue")
-    logger.info("Background scheduler stopped")
+_worker_thread: threading.Thread | None = None
+_worker_stop = threading.Event()
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +143,7 @@ def _scheduler_loop() -> None:
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 def startup_event():
-    global _scheduler_thread
+    global _worker_thread
 
     if settings.is_production:
         from production_check import configuration_checks
@@ -178,24 +158,28 @@ def startup_event():
     # 2. Initial data sync (TMDB + YouTube + AI foundation)
     if settings.ENABLE_STARTUP_SYNC:
         if settings.STARTUP_SYNC_ASYNC:
-            job_id = enqueue_startup_sync()
+            from app.services.background_jobs import job_registry
+            scheduled = job_registry.schedule_due("startup-sync")
+            latest = scheduled or job_registry.latest("startup-sync")
+            job_id = latest.id
             logger.info("Startup sync queued asynchronously (job_id=%s)", job_id)
         else:
             logger.info("Running startup sync inline (blocking)")
             run_startup_sync_once()
             logger.info("Startup sync finished")
 
-    # 3. Start periodic refresh scheduler
-    _scheduler_stop.clear()
-    _scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True, name="data-refresh-scheduler")
-    _scheduler_thread.start()
+    if settings.ENABLE_JOB_WORKER:
+        from job_worker import run_worker
+        _worker_stop.clear()
+        _worker_thread = threading.Thread(target=run_worker, args=(_worker_stop,), daemon=True, name="maintenance-worker")
+        _worker_thread.start()
 
 
 @app.on_event("shutdown")
 def shutdown_event():
-    _scheduler_stop.set()
-    if _scheduler_thread is not None:
-        _scheduler_thread.join(timeout=5)
+    _worker_stop.set()
+    if _worker_thread is not None:
+        _worker_thread.join(timeout=5)
     logger.info("%s shutdown complete", settings.APP_NAME)
 
 

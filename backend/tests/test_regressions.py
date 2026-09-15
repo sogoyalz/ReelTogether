@@ -178,20 +178,3 @@ class TrainingAndJobsTests(unittest.TestCase):
         train, validation, test = [{r.movie_id for r in groups[key]} for key in ('train', 'validation', 'test')]
         self.assertFalse(train & validation or train & test or validation & test)
         self.assertEqual(len(train | validation | test), 30)
-
-    def test_jobs_deduplicate_active_work(self):
-        from threading import Event
-        from app.services.background_jobs import JobRegistry
-        gate = Event()
-        registry = JobRegistry(max_jobs=2)
-        def job():
-            gate.wait(2)
-            return {}
-        try:
-            first = registry.enqueue('sync', job)
-            second = registry.enqueue('sync', job)
-            self.assertEqual(first.id, second.id)
-        finally:
-            gate.set()
-            registry._executor.shutdown(wait=True)
-        self.assertEqual(registry.get(first.id).status, 'completed')

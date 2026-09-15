@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from threading import Lock
 
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.movie import Movie
 from app.services.ai_foundation import ensure_ai_foundation
-from app.services.background_jobs import job_registry
+from app.services.background_jobs import job_registry, serialize_job
+from sqlalchemy.exc import SQLAlchemyError
 from app.services.bootstrap import seed_database_if_empty
 from app.services.catalog_browser import clear_browse_cache
 from app.services.rag_service import initialize_rag_catalog, refresh_embeddings
@@ -17,19 +17,8 @@ from app.services.youtube_analytics import refresh_all_movie_analytics
 
 logger = logging.getLogger(__name__)
 
-_startup_job_lock = Lock()
-_startup_job_id: str | None = None
-
-
 def enqueue_startup_sync() -> str:
-    global _startup_job_id
-    with _startup_job_lock:
-        existing = job_registry.get(_startup_job_id) if _startup_job_id else None
-        if existing and existing.status in {"queued", "running"}:
-            return existing.id
-        job = job_registry.enqueue("startup-sync", _run_startup_sync)
-        _startup_job_id = job.id
-        return job.id
+    return job_registry.enqueue("startup-sync").id
 
 
 def run_startup_sync_once() -> dict:
@@ -37,33 +26,24 @@ def run_startup_sync_once() -> dict:
 
 
 def get_startup_sync_status() -> dict:
-    job = job_registry.get(_startup_job_id) if _startup_job_id else None
-    return {
-        "enabled": settings.ENABLE_STARTUP_SYNC,
-        "async": settings.STARTUP_SYNC_ASYNC,
-        "job": None if job is None else {
-            "id": job.id,
-            "name": job.name,
-            "status": job.status,
-            "queued_at": job.queued_at,
-            "started_at": job.started_at,
-            "finished_at": job.finished_at,
-            "error": job.error,
-            "result": job.result,
-        },
-    }
+    try:
+        job = job_registry.latest("startup-sync")
+    except SQLAlchemyError:
+        job = None
+    return {"enabled": settings.ENABLE_STARTUP_SYNC, "async": settings.STARTUP_SYNC_ASYNC,
+            "job": serialize_job(job) if job else None}
 
 
 def enqueue_tmdb_sync() -> str:
-    return job_registry.enqueue("tmdb-sync", _run_tmdb_sync).id
+    return job_registry.enqueue("tmdb-sync").id
 
 
 def enqueue_youtube_refresh() -> str:
-    return job_registry.enqueue("youtube-refresh", _run_youtube_refresh).id
+    return job_registry.enqueue("youtube-refresh").id
 
 
 def enqueue_ai_refresh() -> str:
-    return job_registry.enqueue("ai-refresh", _run_ai_refresh).id
+    return job_registry.enqueue("ai-refresh").id
 
 
 def _run_startup_sync() -> dict:
@@ -143,7 +123,7 @@ def _run_ai_refresh() -> dict:
                 result = refresh_review_sentiments_for_movie(db, movie_id)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Review sentiment refresh failed for movie %s", movie_id)
-                review_failures.append({"movie_id": movie_id, "error": str(exc)})
+                review_failures.append({"movie_id": movie_id, "error": type(exc).__name__})
                 db.rollback()
                 continue
             review_refreshes += result["new_reviews"]

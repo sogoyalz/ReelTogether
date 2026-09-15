@@ -7,3 +7,4 @@ Wikipedia-API==0.16.0
 redis==8.1.0
 vaderSentiment==3.3.2
 argon2-cffi==25.1.0
+boto3==1.43.93

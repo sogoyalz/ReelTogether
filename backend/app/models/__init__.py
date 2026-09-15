@@ -1,3 +1,4 @@
+from app.models.jobs import BackgroundJob, QueueControl, JobSchedule
 from app.models.movie_night import MovieNight, NightMember, NightVote
 from app.models.account import Account, LoginSession, WatchlistEntry, MovieFeedback
 from app.models.ai import (

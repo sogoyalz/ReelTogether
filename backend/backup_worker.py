@@ -10,6 +10,7 @@ from sqlalchemy.engine import make_url
 from app.core.config import settings
 from database_backup import copy_database
 from backup_health import file_digest
+from offsite_backup import publish_backup
 
 logger = logging.getLogger("backups")
 
@@ -32,6 +33,7 @@ def backup_once(source: Path, directory: Path):
     # Retain only files created by this worker, after a verified replacement exists.
     for old in sorted(directory.glob("catalog-*.sqlite"))[:-14]:
         old.unlink()
+    publish_backup(backup, directory)
     return status
 
 

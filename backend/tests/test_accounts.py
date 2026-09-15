@@ -1,5 +1,5 @@
 import os
-os.environ.update(ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL="sqlite://", REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="", ENVIRONMENT="development")
+os.environ.update(ENABLE_JOB_WORKER="false", ENABLE_PERIODIC_SYNC="false", ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL="sqlite://", REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="", ENVIRONMENT="development")
 import unittest
 from datetime import timedelta
 from unittest.mock import patch

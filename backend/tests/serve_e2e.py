@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 fixture_directory = TemporaryDirectory(prefix="reeltogether-browser-")
 atexit.register(fixture_directory.cleanup)
 fixture_url = "sqlite:///" + str(Path(fixture_directory.name) / "catalog.sqlite")
-os.environ.update(PROXY_SHARED_SECRET="test-only-browser-proxy-secret", ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL=fixture_url, REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost","127.0.0.1"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="")
+os.environ.update(ENABLE_JOB_WORKER="false", ENABLE_PERIODIC_SYNC="false", PROXY_SHARED_SECRET="test-only-browser-proxy-secret", ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL=fixture_url, REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost","127.0.0.1"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="")
 from app.core.config import settings
 settings.CORS_ORIGINS = ["http://127.0.0.1:3011", "http://localhost:3011"]
 from datetime import date

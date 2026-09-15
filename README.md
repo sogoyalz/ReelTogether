@@ -125,3 +125,5 @@ See [Production readiness](docs/PRODUCTION_READINESS.md) for verification, confi
 Open **Movie Night** to create a room for 2–8 signed-in friends. Share the invitation, save private preferences, vote Yes/Pass/Veto, and reveal the group’s matches. The host chooses among tied top results; each person can optionally save the winner. Rooms expire after 24 hours.
 
 See [Movie Night design and verification](docs/MOVIE_NIGHT.md) for privacy rules, ranking, concurrency checks and limitations.
+
+Operational setup and recovery: [operations guide](docs/OPERATIONS.md). Offsite storage and alert delivery require deployment-specific configuration.
