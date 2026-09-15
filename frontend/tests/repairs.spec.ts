@@ -43,3 +43,12 @@ test('malformed identity cookies are replaced without crashing the proxy',async(
     expect(response.headers()['set-cookie']).toContain('movie-client=')
   }
 })
+
+
+test('concurrent catalog requests keep the fixture responsive',async({request})=>{
+  for(let batch=0;batch<10;batch++){
+    const responses=await Promise.all(Array.from({length:8},(_,i)=>request.get(i%2?'/api/movies/browse?genre=Drama&page_size=24':'/api/movies/browse?page_size=24')))
+    for(const response of responses){expect(response.status()).toBe(200);expect((await response.json()).items.length).toBeGreaterThan(0)}
+  }
+  expect((await request.get('/api/auth/me')).status()).toBe(401)
+})

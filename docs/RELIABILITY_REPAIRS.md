@@ -14,10 +14,11 @@
 ## Validation
 
 - 91 backend tests passed, including deterministic file-backed password-reset/login interleavings with and without password rehash, independent proxy identities, malformed metadata, backup loss/corruption and stale round requests.
-- 17 browser tests passed, including two separate movie-night participants, unsaved host preferences, a restarted round, deleting the last item on a watchlist page, retry headers and malformed proxy cookies.
+- 18 browser tests passed, including two separate movie-night participants, unsaved host preferences, a restarted round, deleting the last item on a watchlist page, retry headers, malformed proxy cookies and concurrent catalog requests.
 - TypeScript passed. Lint has no errors and retains three existing image-optimization warnings.
 - Migration upgrade preserved pre-existing lobby/voting/revealed/selected rooms. Downgrade/re-upgrade and schema comparison passed against a disposable database. Production configuration preflight passed against that fixture.
 - Backend and frontend dependency audits reported no known vulnerabilities at verification time.
+- Linux CI exposed a browser-fixture deadlock: multiple request threads shared one in-memory SQLite connection. The fixture now uses a disposable file-backed database with separate connections and foreign keys enabled. An isolated Linux reproduction changed from 80 request timeouts to 80 successful responses. Browser runs also have a three-minute overall timeout and stream server output for diagnosis.
 - The production container build passed. The local services run revision `20260915_0008`, retain 1,369 catalog movies, and pass backup health.
 - A bounded local read check returned HTTP 200 for all 100 requests with five workers: p50 129.88 ms, p95 332.49 ms. This is not a production-capacity benchmark.
 

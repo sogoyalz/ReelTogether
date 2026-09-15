@@ -2,21 +2,30 @@
 import os
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
+import atexit
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.update(PROXY_SHARED_SECRET="test-only-browser-proxy-secret", ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL="sqlite://", REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost","127.0.0.1"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="")
+fixture_directory = TemporaryDirectory(prefix="reeltogether-browser-")
+atexit.register(fixture_directory.cleanup)
+fixture_url = "sqlite:///" + str(Path(fixture_directory.name) / "catalog.sqlite")
+os.environ.update(PROXY_SHARED_SECRET="test-only-browser-proxy-secret", ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL=fixture_url, REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost","127.0.0.1"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="")
 from app.core.config import settings
 settings.CORS_ORIGINS = ["http://127.0.0.1:3011", "http://localhost:3011"]
 from datetime import date
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
-from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.models import Movie, MovieAnalytics
 from app.services.tmdb import _populate_analytics
 from app.api import movies
 from main import app
-engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+# Each request needs its own connection: concurrent SQLite callbacks on one
+# shared StaticPool connection can stall the Linux interpreter.
+engine = create_engine(fixture_url, connect_args={"check_same_thread": False, "timeout": 10})
+@event.listens_for(engine, "connect")
+def fixture_foreign_keys(connection, _):
+    connection.execute("PRAGMA foreign_keys=ON")
 Base.metadata.create_all(engine)
 with Session(engine) as db:
     for i in range(60):
