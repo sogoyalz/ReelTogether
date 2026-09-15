@@ -1,5 +1,6 @@
 """Read-only production configuration and database preflight; never prints secrets."""
 import json
+from app.services.schema_health import assert_schema_ready
 from sqlalchemy import select
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -26,9 +27,7 @@ def main():
     checks = configuration_checks()
     try:
         with SessionLocal() as db:
-            db.execute(select(Movie.id).limit(1))
-            db.execute(select(Account.recovery_hash).limit(1))
-            db.execute(select(LoginSession.token_hash).limit(1))
+            assert_schema_ready(db)
         checks['database_schema_accessible'] = True
     except Exception:
         checks['database_schema_accessible'] = False

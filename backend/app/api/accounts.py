@@ -52,8 +52,17 @@ def login(payload: Credentials, request: Request, response: Response, db: Sessio
     account = db.scalar(select(Account).where(Account.username == payload.username))
     if not verify_password(account, payload.password):
         raise HTTPException(401, "Invalid username or password")
-    if passwords.check_needs_rehash(account.password_hash):
-        account.password_hash = hash_password(payload.password)
+    verified_hash = account.password_hash
+    next_hash = hash_password(payload.password) if passwords.check_needs_rehash(verified_hash) else verified_hash
+    # A conditional write rechecks the credential and holds the account write
+    # lock through session commit. Recovery either precedes it (reject login)
+    # or follows it (and deletes the newly created session).
+    changed = db.execute(update(Account).where(
+        Account.id == account.id, Account.password_hash == verified_hash,
+    ).values(password_hash=next_hash))
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(401, "Credentials changed; sign in again")
     return create_session(db, account, request, response)
 
 

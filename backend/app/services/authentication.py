@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.account import Account, LoginSession
 from app.services.cache import ExpiringMap
+from app.services.client_identity import client_identity
 
 COOKIE = "movie-session"
 SESSION_SECONDS = 7 * 24 * 60 * 60
@@ -40,15 +41,19 @@ def require_same_origin(request: Request):
 
 
 def throttle_auth(request: Request, username: str):
-    # Deliberately do not trust a user-controlled forwarding header or cookie here.
-    ip = request.client.host if request.client else "unknown"
+    # Signed browser identity separates users behind the frontend proxy.
+    # The username limit remains independent, including across new cookies.
+    identity = client_identity(request)
     timestamp = monotonic()
     with _attempt_lock:
-        for key, limit, seconds in [("ip:" + ip, 60, 3600), ("user:" + username, 10, 600)]:
+        pending = {}
+        for key, limit, seconds in [(identity, 60, 3600), ("user:" + username, 10, 600)]:
             entries = [t for t in _attempts.get(key, []) if timestamp - t < seconds]
             if len(entries) >= limit:
-                raise HTTPException(429, "Too many authentication attempts; try again later", headers={"Retry-After": str(seconds)})
+                raise HTTPException(429, "Too many authentication attempts; try again later", headers={"Retry-After": str(max(1, int(seconds - (timestamp - entries[0])) + 1))})
             entries.append(timestamp)
+            pending[key] = entries
+        for key, entries in pending.items():
             _attempts[key] = entries
 
 

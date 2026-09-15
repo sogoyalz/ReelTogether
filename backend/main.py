@@ -28,6 +28,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.api import movie_nights, accounts, admin, ai, analytics, assistant, movies, ratings, recommendations, search
 from app.core.middleware import InMemoryRateLimitMiddleware, RequestContextMiddleware
 from app.core.config import settings
+from app.services.schema_health import assert_schema_ready
 from app.services.bootstrap import initialize_database
 from app.services.redis_store import redis_health
 from app.services.startup_jobs import (
@@ -238,14 +239,12 @@ def liveness_check():
 
 @app.get("/health/ready", tags=["system"])
 def readiness_check():
-    """Kubernetes readiness probe — 200 only when startup sync is done."""
+    """Readiness requires the schema for every enabled persisted feature."""
     startup_status = get_startup_sync_status()
     job = startup_status.get("job")
     try:
         with SessionLocal() as db:
-            db.execute(select(Movie.id).limit(1))
-            db.execute(select(Account.recovery_hash).limit(1))
-            db.execute(select(LoginSession.token_hash).limit(1))
+            assert_schema_ready(db)
         ready = True
     except Exception:
         ready = False

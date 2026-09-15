@@ -1,3 +1,4 @@
+from app.services.provider_metadata import normalize_metadata
 """Read-only analysis of the currently stored observations."""
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -25,7 +26,7 @@ def get_movie_ai_overview(movie_id: int, db: Session = Depends(get_db)):
     discussions = [d for d in movie.discussions if is_sourced_discussion(d)]
     opinion = build_public_opinion(discussions)
     enrichment = get_enrichment(movie)
-    metadata = getattr(movie, "provider_metadata", None) or {}
+    metadata = normalize_metadata(getattr(movie, "provider_metadata", None))
     landscape = analyze_review_landscape(movie, discussions, enrichment, metadata)
     # Missing reviews are missing evidence, not neutral reviews or generated opinions.
     for key in ("critics", "audience"):

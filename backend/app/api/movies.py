@@ -19,6 +19,7 @@ from app.services.catalog_browser import CatalogBrowseFilters, browse_catalog, c
 from app.services.cache import TTLCache
 from app.services.catalog_enrichment import get_enrichment
 from app.services.movie_data import build_movie_data_contract
+from app.services.provider_metadata import normalize_metadata
 from app.services.omdb import fetch_movie_metadata
 from app.services.tmdb import sync_tmdb_catalog
 from app.services.wikidata import fetch_movie_wikidata
@@ -75,6 +76,7 @@ def _serialize_summary_fast(movie: Movie) -> MovieSummary:
     """Fast list-view serialization — skips live OMDB HTTP call (OMDB used on detail only)."""
     analytics = _analytics_payload(movie)
     enrichment = get_enrichment(movie)
+    metadata = normalize_metadata(movie.provider_metadata)
 
     return MovieSummary(
         id=movie.id,
@@ -82,7 +84,7 @@ def _serialize_summary_fast(movie: Movie) -> MovieSummary:
         slug=movie.slug,
         title=movie.title,
         release_date=movie.release_date,
-        **{key: value for key, value in build_movie_data_contract(movie, analytics=_latest_analytics(movie), enrichment=enrichment, omdb_metadata=movie.provider_metadata or {}).items() if key in MovieSummary.model_fields},
+        **{key: value for key, value in build_movie_data_contract(movie, analytics=_latest_analytics(movie), enrichment=enrichment, omdb_metadata=metadata).items() if key in MovieSummary.model_fields},
         poster_url=movie.poster_url,
         backdrop_url=movie.backdrop_url,
         overview=movie.overview,
@@ -95,10 +97,10 @@ def _serialize_summary_fast(movie: Movie) -> MovieSummary:
         streaming_on=enrichment["streaming_on"],
         directors=enrichment["directors"],
         cast=enrichment["cast"],
-        imdb_rating=(movie.provider_metadata or {}).get("imdb_rating"),
-        rated=(movie.provider_metadata or {}).get("rated"),
-        runtime=str(movie.provider_metadata["runtime"]) if (movie.provider_metadata or {}).get("runtime") else None,
-        rotten_tomatoes=(movie.provider_metadata or {}).get("rotten_tomatoes"),
+        imdb_rating=metadata.get("imdb_rating"),
+        rated=metadata.get("rated"),
+        runtime=metadata.get("runtime"),
+        rotten_tomatoes=metadata.get("rotten_tomatoes"),
         logo_url=enrichment.get("logo_url"),
     )
 
@@ -107,7 +109,8 @@ def _serialize_summary_full(movie: Movie) -> MovieSummary:
     """Full serialization with OMDB data. Used for search results."""
     analytics = _analytics_payload(movie)
     enrichment = get_enrichment(movie)
-    omdb_metadata = fetch_movie_metadata(movie) or {}
+    metadata = normalize_metadata(movie.provider_metadata)
+    omdb_metadata = normalize_metadata(fetch_movie_metadata(movie))
 
     return MovieSummary(
         id=movie.id,
@@ -115,7 +118,7 @@ def _serialize_summary_full(movie: Movie) -> MovieSummary:
         slug=movie.slug,
         title=movie.title,
         release_date=movie.release_date,
-        **{key: value for key, value in build_movie_data_contract(movie, analytics=_latest_analytics(movie), enrichment=enrichment, omdb_metadata=movie.provider_metadata or {}).items() if key in MovieSummary.model_fields},
+        **{key: value for key, value in build_movie_data_contract(movie, analytics=_latest_analytics(movie), enrichment=enrichment, omdb_metadata=metadata).items() if key in MovieSummary.model_fields},
         poster_url=movie.poster_url,
         backdrop_url=movie.backdrop_url,
         overview=movie.overview,
@@ -139,7 +142,9 @@ def _serialize_summary_full(movie: Movie) -> MovieSummary:
 def _serialize_detail(movie: Movie) -> MovieDetail:
     analytics = _analytics_payload(movie)
     enrichment = get_enrichment(movie)
+    metadata = normalize_metadata(movie.provider_metadata)
     omdb_metadata, wikipedia, wikidata = _fetch_detail_enrichment(movie)
+    omdb_metadata = normalize_metadata(omdb_metadata)
 
     summary = _serialize_summary_fast(movie)
 

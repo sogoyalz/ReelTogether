@@ -117,3 +117,35 @@ class MovieNightTests(unittest.TestCase):
             with ThreadPoolExecutor(max_workers=2) as pool:
                 self.assertEqual(sorted(pool.map(select_winner,[1,2])),[200,409])
             engine.dispose()
+
+    def test_restart_removes_old_ballots_and_rejects_late_votes(self):
+        self.setup_room();movies=self.join_start()
+        self.alice.put(self.path+'/vote',json={'movie_id':movies[0]['id'],'choice':'yes','round_id':1},headers=self.a)
+        self.assertEqual(self.bob.post(self.path+'/restart',json={'round_id':1},headers=self.b).status_code,403)
+        response=self.alice.post(self.path+'/restart',json={'round_id':1},headers=self.a)
+        self.assertEqual(response.status_code,200,response.text)
+        room=self.alice.get(self.path).json()
+        self.assertEqual(room['state'],'lobby');self.assertEqual(room['my_votes'],{});self.assertEqual(room['movies'],[])
+        self.assertEqual(self.bob.post('/api/movie-nights/join',json={'token':self.token},headers=self.b).status_code,404)
+        self.assertEqual(self.alice.post(self.path+'/start',headers=self.a).status_code,200)
+        self.assertEqual(self.alice.get(self.path).json()['round_id'],2)
+        stale={'movie_id':movies[0]['id'],'choice':'yes','round_id':1}
+        self.assertEqual(self.alice.put(self.path+'/vote',json=stale,headers=self.a).status_code,409)
+        self.assertEqual(self.alice.put(self.path+'/vote',json={**stale,'round_id':2},headers=self.a).status_code,200)
+        self.assertEqual(self.alice.post(self.path+'/restart',json={'round_id':1},headers=self.a).status_code,409)
+
+    def test_lobby_removal_is_host_only_and_revokes_old_invites(self):
+        self.setup_room();self.join_start()
+        self.alice.post(self.path+'/restart',json={'round_id':1},headers=self.a)
+        room=self.alice.get(self.path).json()
+        guest=next(m['account_id'] for m in room['members'] if not m['is_host'])
+        host=next(m['account_id'] for m in room['members'] if m['is_host'])
+        self.assertEqual(self.bob.post(self.path+'/remove-member',json={'account_id':host},headers=self.b).status_code,403)
+        self.assertEqual(self.alice.post(self.path+'/remove-member',json={'account_id':host},headers=self.a).status_code,422)
+        response=self.alice.post(self.path+'/remove-member',json={'account_id':guest},headers=self.a)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(self.bob.get(self.path).status_code,404)
+        self.assertEqual(self.alice.post(self.path+'/start',headers=self.a).status_code,409)
+        self.assertEqual(self.bob.post('/api/movie-nights/join',json={'token':response.json()['invite_token']},headers=self.b).status_code,200)
+        self.alice.post(self.path+'/start',headers=self.a)
+        self.assertEqual(self.alice.post(self.path+'/remove-member',json={'account_id':guest},headers=self.a).status_code,409)

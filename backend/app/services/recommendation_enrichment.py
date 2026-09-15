@@ -1,3 +1,4 @@
+from app.services.provider_metadata import normalize_metadata
 """Fill only missing recommendation fields by verified TMDB ID, in bounded batches."""
 from datetime import datetime, timezone
 from sqlalchemy import select
@@ -13,7 +14,7 @@ def enrich_metadata(db, *, limit=25, after_id=0, apply=False):
     if apply and not settings.tmdb_api_configured:
         raise ValueError('Set TMDB_API_KEY before applying enrichment')
     movies = list(db.scalars(select(Movie).where(Movie.id > after_id).order_by(Movie.id)))
-    candidates = [m for m in movies if movie_runtime(m) is None or not ((m.provider_metadata or {}).get('original_language') or (m.provider_metadata or {}).get('language'))]
+    candidates = [m for m in movies if movie_runtime(m) is None or not (normalize_metadata(m.provider_metadata).get('original_language') or normalize_metadata(m.provider_metadata).get('language'))]
     selected = candidates[:limit]
     report = {'apply': apply, 'pending_after_cursor': len(candidates), 'selected_ids': [m.id for m in selected], 'updated': 0, 'failures': [], 'last_processed_id': after_id, 'stopped_early': False}
     if not apply:
@@ -24,7 +25,7 @@ def enrich_metadata(db, *, limit=25, after_id=0, apply=False):
             details = _tmdb_get(f'movie/{movie.tmdb_id}')
             if not isinstance(details, dict) or details.get('id') != movie.tmdb_id:
                 raise ValueError('Identity mismatch')
-            metadata = dict(movie.provider_metadata or {})
+            metadata = normalize_metadata(movie.provider_metadata)
             changed = []
             runtime = details.get('runtime')
             if movie_runtime(movie) is None and isinstance(runtime, int) and not isinstance(runtime, bool) and 1 <= runtime <= 600:

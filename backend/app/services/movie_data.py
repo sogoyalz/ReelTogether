@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 
 from app.models.movie import Movie, MovieAnalytics
 from app.services.mock_data import SEEDED_MOVIE_SLUGS
+from app.services.provider_metadata import normalize_metadata
 from app.services.prediction_model import is_non_theatrical_release, normalize_public_forecast
 
 FieldSource = str
@@ -24,7 +25,7 @@ def build_movie_data_contract(
     domestic_high: float = 0.0,
 ) -> dict:
     enrichment = enrichment or {}
-    omdb_metadata = omdb_metadata or {}
+    omdb_metadata = normalize_metadata(omdb_metadata)
 
     canonical_status = derive_canonical_status(movie)
     catalog_source = _infer_catalog_source(movie)
@@ -85,7 +86,7 @@ def build_movie_data_contract(
         "predicted_domestic_total_usd": "generated" if forecast["forecast_is_public"] and forecast["predicted_domestic_total_usd"] else "missing",
     }
 
-    if (movie.provider_metadata or {}).get("youtube_observation"):
+    if normalize_metadata(movie.provider_metadata).get("youtube_observation"):
         for field in ("trailer_views", "youtube_likes", "youtube_comments"):
             field_sources[field] = "sourced"
 
@@ -159,7 +160,7 @@ def _build_warnings(
         )
     if movie.release_date < date.today() and movie.status in {"upcoming", "announced"}:
         warnings.append("Release date is in the past, but the stored status was not marked as released.")
-    if movie.release_date >= date.today() and movie.status == "released":
+    if movie.release_date > date.today() and movie.status == "released":
         warnings.append("Release date is in the future, but the stored status was marked as released.")
     if catalog_source == "generated":
         warnings.append("Core metadata is currently coming from local demo fallback data, not a live provider feed.")

@@ -9,6 +9,7 @@ from typing import get_args
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.models.movie import Movie
+from app.services.provider_metadata import normalize_metadata
 from app.schemas.assistant import ChatRequest, Filters, Genre, Language
 
 LANGUAGE_CODES = dict(zip(get_args(Language), ["en", "hi", "ta", "te", "ml", "kn", "ko", "ja", "fr", "es"]))
@@ -69,7 +70,7 @@ def parse_filters(message: str, previous: Filters):
 
 
 def movie_runtime(movie: Movie):
-    value = (movie.provider_metadata or {}).get("runtime")
+    value = normalize_metadata(movie.provider_metadata).get("runtime")
     if isinstance(value, int) and not isinstance(value, bool):
         return value if value > 0 else None
     match = re.fullmatch(r"\s*(\d+)\s*(?:min(?:utes?)?)?\s*", str(value), re.I)
@@ -77,7 +78,7 @@ def movie_runtime(movie: Movie):
 
 
 def movie_languages(movie: Movie):
-    metadata = movie.provider_metadata or {}
+    metadata = normalize_metadata(movie.provider_metadata)
     text = str(metadata.get("language") or "").lower()
     original = metadata.get("original_language")
     return [name for name, code in LANGUAGE_CODES.items() if original == code or re.search(r"\b" + name.lower() + r"\b", text)]

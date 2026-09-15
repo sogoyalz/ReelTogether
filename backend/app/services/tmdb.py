@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.provider_metadata import normalize_metadata
+
 import json
 import re
 from dataclasses import dataclass
@@ -198,7 +200,7 @@ def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult, *, used_sl
         tmdb_popularity=0,
     )
 
-    metadata = dict(movie.provider_metadata or {})
+    metadata = normalize_metadata(movie.provider_metadata)
     if isinstance(details.get("runtime"), int) and details["runtime"] > 0:
         metadata["runtime"] = f"{details['runtime']} min"
     if details.get("original_language"):
@@ -235,7 +237,7 @@ def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult, *, used_sl
     from app.services.omdb import fetch_movie_metadata
     metadata = fetch_movie_metadata(movie)
     if metadata:
-        movie.provider_metadata = {**(movie.provider_metadata or {}), **metadata}
+        movie.provider_metadata = {**normalize_metadata(movie.provider_metadata), **metadata}
     result.synced_movies += 1
     return created
 
@@ -310,7 +312,7 @@ def _upsert_movie_summary(
     from app.services.omdb import fetch_movie_metadata
     metadata = fetch_movie_metadata(movie)
     if metadata:
-        movie.provider_metadata = {**(movie.provider_metadata or {}), **metadata}
+        movie.provider_metadata = {**normalize_metadata(movie.provider_metadata), **metadata}
     result.synced_movies += 1
     return created
 

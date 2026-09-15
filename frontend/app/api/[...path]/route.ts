@@ -35,6 +35,10 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
         'Cache-Control': 'private, no-store',
       },
     })
+    for (const header of ['retry-after', 'x-request-id']) {
+      const value = response.headers.get(header)
+      if (value) outgoing.headers.set(header, value)
+    }
     if (identity) outgoing.cookies.set('movie-client', identity, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' })
     for (const cookie of response.headers.getSetCookie()) outgoing.headers.append('Set-Cookie', cookie)
     return outgoing
@@ -87,10 +91,11 @@ function browserIdentity(request: NextRequest): string | null {
   if (!secret) return null
   const sign = (value: string) => createHmac('sha256', secret).update(value).digest('hex')
   const existing = request.cookies.get('movie-client')?.value || ''
-  const [id, signature] = existing.split('.')
-  const expected = id ? sign(id) : ''
-  if (id?.length === 36 && signature?.length === expected.length &&
-      timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return existing
+  const match = /^([0-9a-fA-F-]{36})\.([0-9a-f]{64})$/.exec(existing)
+  if (match) {
+    const [, id, signature] = match
+    if (timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(sign(id), 'hex'))) return existing
+  }
   const next = randomUUID()
   return `${next}.${sign(next)}`
 }

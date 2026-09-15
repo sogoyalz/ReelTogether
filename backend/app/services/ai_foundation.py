@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.provider_metadata import normalize_metadata
+
 import json
 from datetime import date, datetime, timedelta
 from collections import Counter
@@ -179,7 +181,7 @@ def _ensure_feature_snapshot(db: Session, movie: Movie) -> bool:
         return False
 
     analytics = _latest_analytics(movie)
-    omdb = movie.provider_metadata or {}
+    omdb = normalize_metadata(movie.provider_metadata)
     views = analytics.youtube_views if analytics else 0
     likes = analytics.youtube_likes if analytics else 0
     comments = analytics.youtube_comments if analytics else 0
@@ -206,7 +208,7 @@ def _ensure_prediction_snapshot(db: Session, movie: Movie) -> bool:
         return False
 
     analytics = _latest_analytics(movie)
-    omdb = movie.provider_metadata or {}
+    omdb = normalize_metadata(movie.provider_metadata)
     rating = _parse_float(omdb.get("imdb_rating"))
     franchise_bonus = 1.12 if get_enrichment(movie).get("franchise") else 1.0
     rating_bonus = 1 + min(rating / 25, 0.28)
@@ -232,7 +234,7 @@ def _ensure_summary_snapshot(db: Session, movie: Movie) -> bool:
         return False
 
     enrichment = get_enrichment(movie)
-    omdb = movie.provider_metadata or {}
+    omdb = normalize_metadata(movie.provider_metadata)
     discussions = [d for d in movie.discussions if is_sourced_discussion(d)]
     landscape = analyze_review_landscape(movie, discussions, enrichment, omdb)
     audience_summary = landscape["audience"].summary if landscape["audience"].item_count else "No sourced audience discussions are stored."

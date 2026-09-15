@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.provider_metadata import normalize_metadata
+
 import json
 import math
 from dataclasses import dataclass
@@ -277,7 +279,7 @@ def _feature_map(
 
 
 def _targets_for_movie(movie: Movie) -> tuple[float, float]:
-    target = (movie.provider_metadata or {}).get("box_office_targets", {})
+    target = normalize_metadata(movie.provider_metadata).get("box_office_targets", {})
     if movie.release_date >= date.today() or not target.get("source_url") or not target.get("verified_at"):
         return 0.0, 0.0
     return float(target.get("opening_usd", 0)), float(target.get("domestic_usd", 0))

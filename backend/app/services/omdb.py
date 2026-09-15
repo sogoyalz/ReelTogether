@@ -9,6 +9,7 @@ from urllib.request import urlopen
 from app.core.config import settings
 from app.services.cache import ExpiringMap
 from app.models.movie import Movie
+from app.services.provider_metadata import normalize_metadata, metadata_text
 
 OMDB_API_ENDPOINT = "https://www.omdbapi.com/"
 _CACHE = ExpiringMap()
@@ -16,11 +17,11 @@ _CACHE = ExpiringMap()
 
 def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
     if not settings.omdb_api_configured:
-        return movie.provider_metadata or None
+        return normalize_metadata(movie.provider_metadata) or None
 
     cache_key = (movie.title, movie.release_date.year)
     if cache_key in _CACHE:
-        return _CACHE[cache_key]
+        return _CACHE[cache_key] or normalize_metadata(movie.provider_metadata) or None
 
     params = {
         "apikey": settings.OMDB_API_KEY,
@@ -37,13 +38,14 @@ def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
             payload = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, ValueError):
         _CACHE[cache_key] = None
-        return None
+        return normalize_metadata(movie.provider_metadata) or None
 
-    if payload.get("Response") != "True":
+    if not isinstance(payload, dict) or payload.get("Response") != "True":
         _CACHE[cache_key] = None
-        return None
+        return normalize_metadata(movie.provider_metadata) or None
 
-    ratings = {rating.get("Source"): rating.get("Value") for rating in payload.get("Ratings", [])}
+    entries = payload.get("Ratings")
+    ratings = {rating["Source"]: rating.get("Value") for rating in (entries if isinstance(entries, list) else []) if isinstance(rating, dict) and isinstance(rating.get("Source"), str)}
     metadata = {
         "imdb_id": _normalize_str(payload.get("imdbID")),
         "rated": _normalize_str(payload.get("Rated")),
@@ -62,10 +64,4 @@ def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
 
 
 def _normalize_str(value: Any) -> str | None:
-    if value is None:
-        return None
-
-    text = str(value).strip()
-    if not text or text == "N/A":
-        return None
-    return text
+    return metadata_text(value)

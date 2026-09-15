@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from sqlalchemy.engine import make_url
 from app.core.config import settings
 from database_backup import copy_database
+from backup_health import file_digest
 
 logger = logging.getLogger("backups")
 
@@ -23,7 +24,7 @@ def backup_once(source: Path, directory: Path):
         restored = copy_database(backup, Path(temporary) / "restored.sqlite")
         if report != restored:
             raise ValueError("Restored backup differs from source backup")
-    status = {"ok": True, "verified_at": time.time(), "backup": name}
+    status = {"ok": True, "verified_at": time.time(), "backup": name, "sha256": file_digest(backup)}
     pending = directory / "status.tmp"
     pending.write_text(json.dumps(status))
     pending.chmod(0o600)

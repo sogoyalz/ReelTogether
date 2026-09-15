@@ -10,6 +10,7 @@ from app.services.movie_data import derive_canonical_status
 from app.repositories import movies as movie_repository
 from app.services.catalog_enrichment import get_enrichment
 from app.services.cache import TTLCache
+from app.services.provider_metadata import normalize_metadata
 from app.services.semantic_search import matches_semantic_query, semantic_query_score
 
 
@@ -82,7 +83,7 @@ def _prepare_movie(movie: Movie) -> dict:
     return {
         "movie": movie,
         "enrichment": enrichment,
-        "metadata": movie.provider_metadata or {},
+        "metadata": normalize_metadata(movie.provider_metadata),
         "analytics": _latest_analytics(movie),
         "semantic_score": 0.0,
     }

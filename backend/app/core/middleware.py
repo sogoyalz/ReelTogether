@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import hashlib
-import hmac
 import time
 import uuid
 from collections import defaultdict, deque
@@ -17,6 +15,7 @@ from starlette.responses import JSONResponse, Response
 
 from app.core.config import settings
 from app.services.redis_store import sliding_window_allow
+from app.services.client_identity import client_identity
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -56,14 +55,7 @@ class InMemoryRateLimitMiddleware(BaseHTTPMiddleware):
         if not settings.ENABLE_RATE_LIMIT or not request.url.path.startswith(settings.API_V1_PREFIX):
             return await call_next(request)
 
-        client_host = request.client.host if request.client else "unknown"
-        token = request.headers.get("x-movie-client", "")
-        if settings.PROXY_SHARED_SECRET and "." in token:
-            identity, signature = token.rsplit(".", 1)
-            expected = hmac.new(settings.PROXY_SHARED_SECRET.encode(), identity.encode(), hashlib.sha256).hexdigest()
-            if len(identity) == 36 and hmac.compare_digest(signature, expected):
-                client_host = "browser:" + identity
-        key = client_host
+        key = client_identity(request)
         now = time.monotonic()
         window_seconds = 60
         limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE + settings.RATE_LIMIT_BURST_REQUESTS

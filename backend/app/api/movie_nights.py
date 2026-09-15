@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, delete
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.account import Account, LoginSession
@@ -26,6 +26,7 @@ class Preferences(Payload):
     genres: list[str] = Field(default_factory=list, max_length=5)
     favorites: list[int] = Field(default_factory=list, max_length=5)
 class Ballot(Payload):
+    round_id: int = Field(default=1, ge=1)
     movie_id: int
     choice: Literal['yes','pass','veto']
 class Winner(Payload):
@@ -115,8 +116,8 @@ def detail(room_id: str, session: LoginSession = Depends(current_session), db: S
     me = db.get(NightMember,(room_id,session.account_id))
     movies = {m.id:m for m in db.scalars(select(Movie).where(Movie.id.in_(list(set(room.candidates + me.favorites)))))}
     return {'id':room.id,'title':room.title,'state':room.state,'is_host':room.host_id == session.account_id,
-        'expired':room.expires_at <= now(),'expires_at':room.expires_at.isoformat()+'Z', 'winner_id':room.winner_id,
-        'members':[{'username':name,'is_host':member.account_id == room.host_id,'complete':bool(room.candidates) and sum(v.account_id == member.account_id for v in votes) == len(room.candidates)} for member,name in members],
+        'round_id':room.round_id, 'expired':room.expires_at <= now(),'expires_at':room.expires_at.isoformat()+'Z', 'winner_id':room.winner_id,
+        'members':[{'account_id':member.account_id,'username':name,'is_host':member.account_id == room.host_id,'complete':bool(room.candidates) and sum(v.account_id == member.account_id for v in votes) == len(room.candidates)} for member,name in members],
         'preferences':{'genres':me.genres,'favorites':me.favorites},
         'favorite_movies':[{'id':mid,'title':movies[mid].title} for mid in me.favorites if mid in movies],
         'my_votes':{str(v.movie_id):v.choice for v in votes if v.account_id == session.account_id},
@@ -152,13 +153,15 @@ def start(room_id: str, session: LoginSession = Depends(current_session), db: Se
         return (-group,-movie.tmdb_popularity,movie.id)
     candidates = sorted((m for m in movies if m.id not in favorites),key=score)[:8]
     if len(candidates) < 3: raise HTTPException(409,'Not enough released movies for a shortlist')
-    room.candidates=[m.id for m in candidates]; room.state='voting'; db.commit()
+    room.candidates=[m.id for m in candidates]; room.round_id += 1; room.state='voting'; db.commit()
     return {'ok':True}
 
 
 @router.put('/{room_id}/vote')
 def vote(room_id: str, payload: Ballot, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = room_for(db,room_id,session.account_id,write=True); require_state(room,'voting')
+    if payload.round_id != room.round_id:
+        raise HTTPException(409, 'This ballot belongs to an older round. Reload the room.')
     if payload.movie_id not in room.candidates: raise HTTPException(422,'Movie is not in this shortlist')
     row = db.get(NightVote,(room_id,session.account_id,payload.movie_id))
     if row: row.choice=payload.choice
@@ -188,3 +191,44 @@ def refresh_invite(room_id: str, session: LoginSession = Depends(current_session
     room=room_for(db,room_id,session.account_id,write=True,host=True); require_state(room,'lobby')
     token=secrets.token_urlsafe(32);room.invite_hash=token_digest(token);db.commit()
     return {'invite_token':token}
+
+
+class RestartRound(Payload):
+    round_id: int = Field(ge=1)
+
+
+@router.post('/{room_id}/restart')
+def restart(room_id: str, payload: RestartRound, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
+    room = room_for(db, room_id, session.account_id, write=True, host=True)
+    if room.state not in {'voting', 'revealed'} or room.round_id != payload.round_id:
+        raise HTTPException(409, 'Only the current unfinished round can be restarted')
+    db.execute(delete(NightVote).where(NightVote.room_id == room_id))
+    room.candidates = []
+    room.winner_id = None
+    room.state = 'lobby'
+    # Old invitations must not allow a removed member to immediately rejoin.
+    token = secrets.token_urlsafe(32)
+    room.invite_hash = token_digest(token)
+    db.commit()
+    return {'ok': True, 'invite_token': token}
+
+
+class RemoveMember(Payload):
+    account_id: int
+
+
+@router.post('/{room_id}/remove-member')
+def remove_member(room_id: str, payload: RemoveMember, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
+    room = room_for(db, room_id, session.account_id, write=True, host=True)
+    require_state(room, 'lobby')
+    if payload.account_id == room.host_id:
+        raise HTTPException(422, 'The host must stay in the room')
+    member = db.get(NightMember, (room_id, payload.account_id))
+    if member is None:
+        raise HTTPException(404, 'Member not found')
+    db.execute(delete(NightVote).where(NightVote.room_id == room_id, NightVote.account_id == payload.account_id))
+    db.delete(member)
+    token = secrets.token_urlsafe(32)
+    room.invite_hash = token_digest(token)
+    db.commit()
+    return {'ok': True, 'invite_token': token}

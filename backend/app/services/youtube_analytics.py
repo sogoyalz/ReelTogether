@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.provider_metadata import normalize_metadata
+
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -314,7 +316,7 @@ def _record_observation(db: Session, analytics: MovieAnalytics) -> None:
     analytics.snapshot_date = observed.date()
     movie = analytics.movie
     movie.provider_metadata = {
-        **(movie.provider_metadata or {}),
+        **normalize_metadata(movie.provider_metadata),
         "youtube_observation": {"verified_at": observed.isoformat(), "source_url": analytics.trailer_url},
     }
     label = f"observed-{observed.date().isoformat()}"

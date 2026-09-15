@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.update(ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL="sqlite://", REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost","127.0.0.1"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="")
+os.environ.update(PROXY_SHARED_SECRET="test-only-browser-proxy-secret", ENABLE_ASSISTANT_AI="false", OPENAI_API_KEY="", DATABASE_URL="sqlite://", REDIS_URL="", ENABLE_STARTUP_SYNC="false", ENABLE_RATE_LIMIT="false", TRUSTED_HOSTS='["localhost","127.0.0.1"]', TMDB_API_KEY="", OMDB_API_KEY="", YOUTUBE_API_KEY="")
 from app.core.config import settings
 settings.CORS_ORIGINS = ["http://127.0.0.1:3011", "http://localhost:3011"]
 from datetime import date

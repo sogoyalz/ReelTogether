@@ -20,6 +20,8 @@ With no provider keys, an empty database is seeded with **demo data**. Existing 
 
 Movie Match (`/recommendations`) now provides focused catalog chat, explainable genre-based recommendations, and account-owned taste feedback. See [Movie Match](docs/MOVIE_MATCH.md) for supported requests and limitations. Optional natural-language preference interpretation is implemented behind configuration and user opt-in; see [interpretation setup](docs/INTERPRETATION_SETUP.md). Live model validation awaits credentials. General-purpose chat and trained forecasting remain outside the supported scope. Legacy rating/recommendation APIs remain disabled by default and unavailable in production. The new authenticated account/watchlist API is separate and enabled. Optional RAG dependencies are isolated in `backend/requirements-experimental.txt`; they are not included in the core runtime or its audit claim.
 
+Latest engineering verification: [Reliability repairs](docs/RELIABILITY_REPAIRS.md).
+
 ## Local setup
 
 Use Python 3.12+ and Node.js 22. From the repository root:

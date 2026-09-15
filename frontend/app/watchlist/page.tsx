@@ -50,6 +50,8 @@ function PrivateWatchlist({ auth }: { auth: AuthState }) {
   const client = useQueryClient()
   const [page, setPage] = useState(1)
   const list = useQuery({ queryKey: ['watchlist', auth.user.id, page], queryFn: async () => (await api.get<Watchlist>('/api/watchlist', { params: { page } })).data })
+  const resolvedPage = list.data?.page ?? page
+  if (list.data && resolvedPage !== page) setPage(resolvedPage)
   const edit = useMutation({
     mutationFn: async ({ id, status }: { id: number; status?: 'planned' | 'watched' }) => status
       ? api.patch(`/api/watchlist/${id}`, { status }, { headers: csrfHeaders(auth) })
@@ -77,6 +79,6 @@ function PrivateWatchlist({ auth }: { auth: AuthState }) {
         </div>
       </section>)}
     </div>
-    <Pagination page={page} totalPages={Math.max(page, list.data?.total_pages || 1)} onChange={setPage} />
+    <Pagination page={resolvedPage} totalPages={list.data?.total_pages || 1} onChange={setPage} />
   </main>
 }

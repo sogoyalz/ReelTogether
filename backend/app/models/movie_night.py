@@ -14,6 +14,7 @@ class MovieNight(Base):
     candidates: Mapped[list[int]] = mapped_column(JSON, default=list)
     winner_id: Mapped[int | None] = mapped_column(ForeignKey('movies.id', ondelete='SET NULL'), nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=0)
+    round_id: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 class NightMember(Base):
     __tablename__ = 'night_members'
