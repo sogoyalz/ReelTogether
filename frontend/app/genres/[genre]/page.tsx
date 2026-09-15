@@ -1,7 +1,7 @@
 import { EntityMovieGrid } from '@/components/discovery/EntityMovieGrid'
 
-export default function GenrePage({ params }: { params: { genre: string } }) {
-  const genre = decodeURIComponent(params.genre)
+export default async function GenrePage({ params }: { params: Promise<{ genre: string }> }) {
+  const genre = decodeURIComponent((await params).genre)
   return (
     <EntityMovieGrid
       eyebrow="Genre"

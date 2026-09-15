@@ -20,6 +20,8 @@ class Movie(Base):
     backdrop_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     overview: Mapped[str | None] = mapped_column(Text, nullable=True)
     genres: Mapped[list[str]] = mapped_column(JSON, default=list)
+    enrichment_data: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    provider_metadata: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     tmdb_popularity: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[DateTime | None] = mapped_column(DateTime, onupdate=func.now())
@@ -29,6 +31,14 @@ class Movie(Base):
         back_populates="movie",
         cascade="all, delete-orphan",
     )
+    # Separate read-only relationship: list views never truncate the writable history.
+    latest_snapshots: Mapped[list["MovieAnalytics"]] = relationship(
+        "MovieAnalytics",
+        primaryjoin="and_(Movie.id == MovieAnalytics.movie_id, MovieAnalytics.snapshot_label == 'latest')",
+        viewonly=True,
+        order_by="MovieAnalytics.id.desc()",
+    )
+
     discussions: Mapped[list["MovieDiscussion"]] = relationship(
         "MovieDiscussion",
         back_populates="movie",
@@ -54,6 +64,18 @@ class Movie(Base):
         back_populates="movie",
         cascade="all, delete-orphan",
     )
+    review_sentiments: Mapped[list["ReviewSentiment"]] = relationship(
+        "ReviewSentiment",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
+    user_ratings: Mapped[list["UserRating"]] = relationship(
+        "UserRating",
+        back_populates="movie",
+        cascade="all, delete-orphan",
+    )
+
+
 
 
 class MovieAnalytics(Base):

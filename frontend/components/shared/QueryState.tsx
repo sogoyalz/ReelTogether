@@ -9,7 +9,6 @@ export function LoadingState({
 }) {
   return (
     <div className="panel empty-state">
-      <div className="loading-pulse" />
       <h3>{title}</h3>
       <p className="subtle">{description}</p>
     </div>

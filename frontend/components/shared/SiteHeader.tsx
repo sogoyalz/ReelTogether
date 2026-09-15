@@ -1,42 +1,41 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, Search, X } from 'lucide-react'
+import { Menu, X, Clapperboard } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'Home' },
   { href: '/movies', label: 'Library' },
   { href: '/discover', label: 'Discover' },
-  { href: '/compare', label: 'Compare' },
+  { href: '/recommendations', label: 'Movie Match' },
+  { href: '/movie-night', label: 'Movie Night' },
+  { href: '/upcoming', label: 'Upcoming' },
   { href: '/search', label: 'Search' },
+  { href: '/watchlist', label: 'Watchlist' },
 ]
 
 export function SiteHeader() {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
 
-  useEffect(() => {
+  const [previousPath, setPreviousPath] = useState(pathname)
+  if (previousPath !== pathname) {
+    setPreviousPath(pathname)
     setMenuOpen(false)
-  }, [pathname])
+  }
 
   return (
-    <header className="site-header">
+    <header className="site-header" onKeyDown={event => { if (event.key === 'Escape') { setMenuOpen(false); document.querySelector<HTMLButtonElement>('.nav-toggle')?.focus() } }}>
       <div className="site-header-inner">
-        <div className="site-header-primary">
-          <Link className="brand-mark" href="/">
-            <span className="brand-dot" />
-            <span>
-              <strong>Movie Pulse</strong>
-              <small>Analytics Studio</small>
-            </span>
-          </Link>
-          <div className="header-badge">
-            <span className="header-badge-dot" />
-            Live catalog
-          </div>
-        </div>
+        <Link className="brand-mark" href="/">
+          <span className="brand-symbol"><Clapperboard size={21} aria-hidden="true" /></span>
+          <span>
+            <strong>ReelTogether</strong>
+            <small>A world of cinema.</small>
+          </span>
+        </Link>
         <button
           aria-controls="site-nav"
           aria-expanded={menuOpen}
@@ -53,21 +52,19 @@ export function SiteHeader() {
               item.href === '/'
                 ? pathname === '/'
                 : pathname === item.href || pathname.startsWith(`${item.href}/`)
+
             return (
               <Link
+                aria-current={isActive ? 'page' : undefined}
                 className={isActive ? 'nav-link nav-link-active' : 'nav-link'}
                 href={item.href}
                 key={item.href}
-                aria-current={isActive ? 'page' : undefined}
+                onClick={() => setMenuOpen(false)}
               >
                 {item.label}
               </Link>
             )
           })}
-          <Link className="nav-cta" href="/search">
-            <Search size={16} />
-            Research
-          </Link>
         </nav>
       </div>
     </header>

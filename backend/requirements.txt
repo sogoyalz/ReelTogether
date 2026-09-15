@@ -1,7 +1,9 @@
-fastapi==0.115.8
-uvicorn[standard]==0.34.0
-sqlalchemy==2.0.45
-pydantic-settings==2.7.1
-alembic==1.14.1
-Wikipedia-API==0.6.0
-redis==5.2.1
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+sqlalchemy==2.0.52
+pydantic-settings==2.15.0
+alembic==1.20.0
+Wikipedia-API==0.16.0
+redis==8.1.0
+vaderSentiment==3.3.2
+argon2-cffi==25.1.0

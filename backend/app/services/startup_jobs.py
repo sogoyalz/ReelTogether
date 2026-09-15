@@ -5,10 +5,13 @@ from threading import Lock
 
 from app.core.config import settings
 from app.db.session import SessionLocal
+from app.models.movie import Movie
 from app.services.ai_foundation import ensure_ai_foundation
 from app.services.background_jobs import job_registry
 from app.services.bootstrap import seed_database_if_empty
 from app.services.catalog_browser import clear_browse_cache
+from app.services.rag_service import initialize_rag_catalog, refresh_embeddings
+from app.services.review_fetcher import refresh_review_sentiments_for_movie
 from app.services.tmdb import sync_tmdb_catalog
 from app.services.youtube_analytics import refresh_all_movie_analytics
 
@@ -69,6 +72,7 @@ def _run_startup_sync() -> dict:
         "tmdb": None,
         "youtube": None,
         "ai_foundation": False,
+        "rag": None,
     }
     with SessionLocal() as db:
         if settings.tmdb_api_configured:
@@ -87,6 +91,8 @@ def _run_startup_sync() -> dict:
 
         ensure_ai_foundation(db)
         result["ai_foundation"] = True
+        if settings.ENABLE_RAG:
+            result["rag"] = initialize_rag_catalog(db)
 
         if settings.youtube_api_configured:
             youtube_result = refresh_all_movie_analytics(db)
@@ -128,4 +134,22 @@ def _run_youtube_refresh() -> dict:
 def _run_ai_refresh() -> dict:
     with SessionLocal() as db:
         ensure_ai_foundation(db)
-        return {"ai_foundation": True}
+        movie_ids = [movie.id for movie in db.query(Movie).all()]
+        refreshed = refresh_embeddings(db, movie_ids) if settings.ENABLE_RAG else 0
+        review_refreshes = 0
+        review_failures: list[dict[str, object]] = []
+        for movie_id in movie_ids:
+            try:
+                result = refresh_review_sentiments_for_movie(db, movie_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Review sentiment refresh failed for movie %s", movie_id)
+                review_failures.append({"movie_id": movie_id, "error": str(exc)})
+                db.rollback()
+                continue
+            review_refreshes += result["new_reviews"]
+        return {
+            "ai_foundation": True,
+            "rag_embeddings_refreshed": refreshed,
+            "review_sentiments_refreshed": review_refreshes,
+            "review_sentiment_failures": review_failures,
+        }

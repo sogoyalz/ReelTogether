@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
+import { Pagination } from '@/components/shared/Pagination'
 import { useQuery } from '@tanstack/react-query'
 
 import { MovieCard } from '@/components/shared/MovieCard'
@@ -8,13 +10,14 @@ import { ErrorState, LoadingState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
 
 export default function UpcomingPage() {
+  const [page, setPage] = useState(1)
   const upcomingQuery = useQuery({
-    queryKey: ['upcoming-movies'],
+    queryKey: ['upcoming-movies', 'browse', page],
     queryFn: () =>
       movieApi.browseCatalog({
         status: 'future',
-        sort: 'release',
-        page: 1,
+        sort: 'release_asc',
+        page,
         page_size: 48,
       }),
   })
@@ -27,7 +30,7 @@ export default function UpcomingPage() {
           Track the full upcoming release slate.
         </h1>
         <p className="hero-copy">
-          Every announced or upcoming title in the current mock catalog, with direct
+          Every announced or upcoming title in the current catalog, with direct
           access to each detail page.
         </p>
         <div className="hero-actions" style={{ marginTop: 22 }}>
@@ -53,6 +56,7 @@ export default function UpcomingPage() {
           {upcomingQuery.data.items.map((movie) => <MovieCard key={movie.id} movie={movie} />)}
         </div>
       ) : null}
+      <Pagination page={upcomingQuery.data?.page || page} totalPages={upcomingQuery.data?.total_pages || 1} onChange={setPage} />
     </main>
   )
 }

@@ -3,15 +3,16 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 
-import { movieApi } from '@/lib/api'
+import { movieApi, type MovieSummary } from '@/lib/api'
 import { ErrorState, LoadingState } from '@/components/shared/QueryState'
 
 import { MovieCard } from '../shared/MovieCard'
 
-export function ReleasedMovies() {
+export function ReleasedMovies({ movies }: { movies?: MovieSummary[] }) {
   const { data, isLoading } = useQuery({
     queryKey: ['released-movies', 4],
     queryFn: () => movieApi.getReleased(4),
+    initialData: movies,
   })
 
   if (isLoading) {

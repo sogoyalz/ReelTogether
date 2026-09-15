@@ -4,19 +4,58 @@ services:
       context: ./backend
     env_file:
       - ./backend/.env
+    environment:
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-sqlite:////data/movie_analytics.db}
+      AUTO_CREATE_TABLES: "false"
+      ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+      CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://localhost:3001"]}'
+      TRUSTED_HOSTS: '["backend", "localhost", "127.0.0.1"]'
+      REDIS_URL: ""
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set a shared proxy secret in the root .env}
+    volumes:
+      - movie-data:/data
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  backups:
+    build:
+      context: ./backend
+    command: ["python", "backup_worker.py"]
+    environment:
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-sqlite:////data/movie_analytics.db}
+      BACKUP_DIRECTORY: /data/backups
+    volumes:
+      - movie-data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "backup_health.py"]
+      interval: 5m
+      timeout: 10s
+      start_period: 2m
+      retries: 2
     restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: ""
     environment:
       API_BASE_URL: http://backend:8000
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set a shared proxy secret in the root .env}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  movie-data:

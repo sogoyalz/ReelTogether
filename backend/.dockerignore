@@ -4,3 +4,6 @@ __pycache__
 *.pyc
 movie_analytics.db
 alembic/versions/__pycache__
+
+*.db*
+tests

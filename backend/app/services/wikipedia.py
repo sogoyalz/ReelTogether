@@ -4,14 +4,16 @@ from urllib.parse import quote
 
 import wikipediaapi
 
+from app.services.cache import ExpiringMap
 from app.models.movie import Movie
 
 WIKIPEDIA_BASE_URL = "https://en.wikipedia.org/wiki/"
-_CACHE: dict[str, dict[str, str | list[str] | None] | None] = {}
+_CACHE = ExpiringMap()
 
 _wiki = wikipediaapi.Wikipedia(
-    user_agent="MoviePulse/1.0 (contact@moviepulse.local)",
+    user_agent="ReelTogether/1.0 (https://github.com/sogoyalz/ReelTogether)",
     language="en",
+    timeout=4,
 )
 
 
@@ -31,18 +33,15 @@ def fetch_movie_wikipedia(movie: Movie) -> dict[str, str | list[str] | None] | N
             page = _wiki.page(candidate)
             if not page.exists():
                 continue
-
-            summary = _clean_summary(page.summary)
             metadata = {
-                "title": page.title,
-                "summary": summary,
+                "title": page.title, "summary": _clean_summary(page.summary),
                 "url": page.fullurl or f"{WIKIPEDIA_BASE_URL}{quote(page.title.replace(' ', '_'))}",
                 "categories": _top_categories(page),
             }
-            _CACHE[cache_key] = metadata
-            return metadata
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
+        _CACHE[cache_key] = metadata
+        return metadata
 
     _CACHE[cache_key] = None
     return None

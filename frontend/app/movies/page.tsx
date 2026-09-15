@@ -1,12 +1,30 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { MovieCard } from '@/components/shared/MovieCard'
 import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
+
+const POPULAR_STUDIOS = [
+  'Warner Bros.',
+  'Warner Bros. Pictures',
+  'Universal Pictures',
+  'Disney',
+  'Walt Disney Pictures',
+  'Marvel Studios',
+  'Pixar',
+  'Paramount Pictures',
+  'Sony Pictures',
+  'Columbia Pictures',
+  '20th Century Studios',
+  'Legendary',
+  'Netflix',
+  'Amazon MGM Studios',
+  'A24',
+]
 
 export default function MoviesLibraryPage() {
   const [query, setQuery] = useState('')
@@ -14,13 +32,30 @@ export default function MoviesLibraryPage() {
   const [genreFilter, setGenreFilter] = useState('all')
   const [franchiseFilter, setFranchiseFilter] = useState('all')
   const [studioFilter, setStudioFilter] = useState('all')
+  const [directorFilter, setDirectorFilter] = useState('all')
+  const [customStudioFilter, setCustomStudioFilter] = useState('')
   const [streamingFilter, setStreamingFilter] = useState('all')
   const [releaseYear, setReleaseYear] = useState('')
   const [minimumRating, setMinimumRating] = useState(0)
-  const [minimumHype, setMinimumHype] = useState(0)
-  const [minimumPopularity, setMinimumPopularity] = useState(0)
   const [sortBy, setSortBy] = useState('hype')
   const [page, setPage] = useState(1)
+  const filterKey = JSON.stringify([query,
+    statusFilter,
+    genreFilter,
+    franchiseFilter,
+    studioFilter,
+    directorFilter,
+    customStudioFilter,
+    streamingFilter,
+    releaseYear,
+    minimumRating,
+    sortBy,])
+  const [previousFilters, setPreviousFilters] = useState(filterKey)
+  if (previousFilters !== filterKey) {
+    setPreviousFilters(filterKey)
+    setPage(1)
+  }
+  const activeStudioFilter = studioFilter === 'other' ? customStudioFilter.trim() : studioFilter
 
   const catalogQuery = useQuery({
     queryKey: [
@@ -30,11 +65,11 @@ export default function MoviesLibraryPage() {
       genreFilter,
       franchiseFilter,
       studioFilter,
+      directorFilter,
+      customStudioFilter,
       streamingFilter,
       releaseYear,
       minimumRating,
-      minimumHype,
-      minimumPopularity,
       sortBy,
       page,
     ],
@@ -44,33 +79,18 @@ export default function MoviesLibraryPage() {
         status: statusFilter !== 'all' ? statusFilter : undefined,
         genre: genreFilter !== 'all' ? genreFilter : undefined,
         franchise: franchiseFilter !== 'all' ? franchiseFilter : undefined,
-        studio: studioFilter !== 'all' ? studioFilter : undefined,
+        studio: activeStudioFilter && activeStudioFilter !== 'all' ? activeStudioFilter : undefined,
+        director: directorFilter !== 'all' ? directorFilter : undefined,
         streaming: streamingFilter !== 'all' ? streamingFilter : undefined,
         year: releaseYear ? Number(releaseYear) : undefined,
         min_rating: minimumRating || undefined,
-        min_hype: minimumHype || undefined,
-        min_popularity: minimumPopularity || undefined,
         sort: sortBy,
         page,
         page_size: 24,
       }),
   })
 
-  useEffect(() => {
-    setPage(1)
-  }, [
-    query,
-    statusFilter,
-    genreFilter,
-    franchiseFilter,
-    studioFilter,
-    streamingFilter,
-    releaseYear,
-    minimumRating,
-    minimumHype,
-    minimumPopularity,
-    sortBy,
-  ])
+
 
   const response = catalogQuery.data
   const filteredMovies = response?.items || []
@@ -78,6 +98,8 @@ export default function MoviesLibraryPage() {
   const genres = facets?.genres || []
   const franchises = facets?.franchises || []
   const studios = facets?.studios || []
+  const directors = facets?.directors || []
+  const popularStudios = POPULAR_STUDIOS.filter((studio) => studios.includes(studio))
   const streamingPlatforms = facets?.streaming || []
   const years = facets?.years || []
 
@@ -87,25 +109,24 @@ export default function MoviesLibraryPage() {
     setGenreFilter('all')
     setFranchiseFilter('all')
     setStudioFilter('all')
+    setDirectorFilter('all')
+    setCustomStudioFilter('')
     setStreamingFilter('all')
     setReleaseYear('')
     setMinimumRating(0)
-    setMinimumHype(0)
-    setMinimumPopularity(0)
     setSortBy('hype')
     setPage(1)
   }
 
   return (
-    <main className="page-shell">
+    <main className="page-shell catalog-page">
       <section className="hero-panel">
         <span className="eyebrow">Library</span>
-        <h1 className="hero-title" style={{ fontSize: 'clamp(2.4rem, 6vw, 4.8rem)' }}>
-          Browse the full tracked movie library.
+        <h1 className="hero-title">
+          Find your next favourite.
         </h1>
         <p className="hero-copy">
-          Search movies by name, rating, year, genre, or franchise universe and narrow the catalog
-          like a proper movie explorer.
+          Find something familiar or discover something unexpected. Filter by genre, year, or the people behind the film.
         </p>
         <div className="hero-actions" style={{ marginTop: 22 }}>
           <Link className="cta-button" href="/upcoming">
@@ -161,7 +182,26 @@ export default function MoviesLibraryPage() {
           <span className="metric-label">Studio</span>
           <select className="compare-select" onChange={(event) => setStudioFilter(event.target.value)} value={studioFilter}>
             <option value="all">All</option>
-            {studios.map((studio) => <option key={studio} value={studio}>{studio}</option>)}
+            {popularStudios.map((studio) => <option key={studio} value={studio}>{studio}</option>)}
+            <option value="other">Other</option>
+          </select>
+        </label>
+        {studioFilter === 'other' ? (
+          <label>
+            <span className="metric-label">Other Studio</span>
+            <input
+              className="search-input"
+              onChange={(event) => setCustomStudioFilter(event.target.value)}
+              placeholder="Type a studio name"
+              value={customStudioFilter}
+            />
+          </label>
+        ) : null}
+        <label>
+          <span className="metric-label">Director</span>
+          <select className="compare-select" onChange={(event) => setDirectorFilter(event.target.value)} value={directorFilter}>
+            <option value="all">All</option>
+            {directors.map((director) => <option key={director} value={director}>{director}</option>)}
           </select>
         </label>
         <label>
@@ -183,17 +223,10 @@ export default function MoviesLibraryPage() {
           <input className="search-input" min={0} max={10} onChange={(event) => setMinimumRating(Number(event.target.value || 0))} step="0.1" type="number" value={minimumRating} />
         </label>
         <label>
-          <span className="metric-label">Min Hype</span>
-          <input className="search-input" min={0} max={100} onChange={(event) => setMinimumHype(Number(event.target.value || 0))} type="number" value={minimumHype} />
-        </label>
-        <label>
-          <span className="metric-label">Min Popularity</span>
-          <input className="search-input" min={0} max={100} onChange={(event) => setMinimumPopularity(Number(event.target.value || 0))} type="number" value={minimumPopularity} />
-        </label>
-        <label>
           <span className="metric-label">Sort</span>
           <select className="compare-select" onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
             <option value="hype">Hype score</option>
+            <option value="none">None</option>
             <option value="rating">IMDb rating</option>
             <option value="popularity">Popularity</option>
             <option value="release">Newest release</option>
@@ -207,7 +240,7 @@ export default function MoviesLibraryPage() {
           <p>{response?.total || 0} titles match the current filters.</p>
         </div>
         {response ? (
-          <p className="meta">Sorted by {sortBy}. Showing {filteredMovies.length} titles on this page.</p>
+          <p className="meta">{sortBy === 'none' ? `No manual sort applied. Showing ${filteredMovies.length} titles on this page.` : `Sorted by ${sortBy}. Showing ${filteredMovies.length} titles on this page.`}</p>
         ) : null}
       </div>
       {catalogQuery.isLoading ? <LoadingState title="Loading library" description="Applying filters and building the current movie page." /> : null}

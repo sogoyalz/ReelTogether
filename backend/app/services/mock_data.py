@@ -155,8 +155,8 @@ MOVIE_CATALOG = [
         "tmdb_id": 872585,
         "slug": "dune-part-two",
         "title": "Dune: Part Two",
-        "release_date": date(2026, 4, 18),
-        "status": "upcoming",
+        "release_date": date(2024, 3, 1),
+        "status": "released",
         "poster_url": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=800&q=80",
         "backdrop_url": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80",
         "overview": "Paul Atreides rallies allies across Arrakis as the war for spice turns global attention into pure spectacle.",
@@ -392,6 +392,8 @@ MOVIE_CATALOG = [
         "predicted_domestic_total_usd": 336000000,
     },
 ]
+
+SEEDED_MOVIE_SLUGS = {movie["slug"] for movie in MOVIE_CATALOG}
 
 
 def build_movie_payloads(snapshot_date: date | None = None) -> list[dict]:

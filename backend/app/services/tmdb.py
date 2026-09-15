@@ -9,16 +9,19 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.cache import ExpiringMap
 from app.models.movie import Movie, MovieAnalytics
 from app.services.hype_calculator import HypeCalculator
 
 TMDB_API_BASE = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w780"
-_DETAIL_CACHE: dict[int, dict] = {}
+_DETAIL_CACHE = ExpiringMap()
+_GENRE_CACHE: dict[int, str] | None = None
 
 
 @dataclass
@@ -34,17 +37,39 @@ class TmdbSyncResult:
             self.errors = []
 
 
-def sync_tmdb_catalog(db: Session, pages_per_feed: int = 2) -> TmdbSyncResult:
+DEFAULT_FEED_PATHS = [
+    "movie/popular",
+    "movie/upcoming",
+    "movie/now_playing",
+    "movie/top_rated",
+]
+
+
+def sync_tmdb_catalog(
+    db: Session,
+    pages_per_feed: int = 2,
+    *,
+    target_total_movies: int | None = None,
+    feed_paths: list[str] | None = None,
+    include_watch_providers: bool = True,
+    include_full_details: bool = True,
+) -> TmdbSyncResult:
     result = TmdbSyncResult()
     if not settings.tmdb_api_configured:
         result.errors.append("TMDB_API_KEY is not configured")
         return result
 
-    feed_paths = ["movie/popular", "movie/upcoming", "movie/now_playing", "movie/top_rated"]
+    active_feed_paths = feed_paths or DEFAULT_FEED_PATHS
     seen_ids: set[int] = set()
+    used_slugs = set(db.scalars(select(Movie.slug)).all())
+    projected_total = len(used_slugs)
+    genre_map = _tmdb_genre_map() if not include_full_details else None
 
-    for path in feed_paths:
+    for path in active_feed_paths:
         for page in range(1, pages_per_feed + 1):
+            if target_total_movies is not None and projected_total >= target_total_movies:
+                db.commit()
+                return result
             try:
                 payload = _tmdb_get(path, page=page)
             except RuntimeError as exc:
@@ -58,16 +83,34 @@ def sync_tmdb_catalog(db: Session, pages_per_feed: int = 2) -> TmdbSyncResult:
                 seen_ids.add(movie_id)
 
                 try:
+                    if not include_full_details:
+                        created = _upsert_movie_summary(db, item, genre_map or {}, result, used_slugs=used_slugs)
+                        if created:
+                            projected_total += 1
+                        if target_total_movies is not None and projected_total >= target_total_movies:
+                            db.commit()
+                            return result
+                        continue
                     details = _tmdb_get(
                         f"movie/{movie_id}",
                         append_to_response="videos,credits,images",
                     )
-                    providers_payload = _tmdb_get(f"movie/{movie_id}/watch/providers")
+                    providers_payload = (
+                        _tmdb_get(f"movie/{movie_id}/watch/providers")
+                        if include_watch_providers
+                        else None
+                    )
                     _DETAIL_CACHE[movie_id] = _build_enrichment_payload(details, providers_payload)
-                    _upsert_movie(db, details, result)
+                    created = _upsert_movie(db, details, result, used_slugs=used_slugs)
+                    if created:
+                        projected_total += 1
                 except RuntimeError as exc:
                     result.failed_movies += 1
                     result.errors.append(f"{item.get('title', movie_id)}: {exc}")
+
+                if target_total_movies is not None and projected_total >= target_total_movies:
+                    db.commit()
+                    return result
 
     db.commit()
     return result
@@ -102,15 +145,19 @@ def sync_tmdb_search_results(db: Session, query: str, limit: int = 8) -> TmdbSyn
 
 
 def get_tmdb_movie_enrichment(movie: Movie, allow_network: bool = False) -> dict | None:
+    if movie.enrichment_data:
+        return movie.enrichment_data
     if not settings.tmdb_api_configured or not movie.tmdb_id:
+        return None
+
+    # Offline catalog readers must use persisted data consistently across workers.
+    # A detail request's process-local cache must not change browse filters/facets.
+    if not allow_network:
         return None
 
     cached = _DETAIL_CACHE.get(movie.tmdb_id)
     if cached is not None:
         return cached
-
-    if not allow_network:
-        return None
 
     try:
         details = _tmdb_get("movie/{movie_id}".format(movie_id=movie.tmdb_id), append_to_response="videos,credits,images")
@@ -123,19 +170,19 @@ def get_tmdb_movie_enrichment(movie: Movie, allow_network: bool = False) -> dict
     return result
 
 
-def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult) -> None:
+def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult, *, used_slugs: set[str] | None = None) -> bool:
     tmdb_id = details.get("id")
     title = (details.get("title") or "").strip()
     release_date = _parse_date(details.get("release_date"))
     if not isinstance(tmdb_id, int) or not title or release_date is None:
         result.failed_movies += 1
         result.errors.append(f"Skipped invalid TMDB payload: {tmdb_id or title or 'unknown'}")
-        return
+        return False
 
+    db.flush()  # Make pending imports visible before resolving IDs and slugs.
     slug = _slugify(title)
     existing = db.scalar(select(Movie).where(Movie.tmdb_id == tmdb_id))
-    if existing is None:
-        existing = db.scalar(select(Movie).where(Movie.slug == slug))
+    slug = _resolve_slug_conflict(db, slug, tmdb_id, existing, used_slugs=used_slugs)
 
     genres = [genre["name"] for genre in details.get("genres", []) if genre.get("name")]
     movie = existing or Movie(
@@ -151,6 +198,13 @@ def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult) -> None:
         tmdb_popularity=0,
     )
 
+    metadata = dict(movie.provider_metadata or {})
+    if isinstance(details.get("runtime"), int) and details["runtime"] > 0:
+        metadata["runtime"] = f"{details['runtime']} min"
+    if details.get("original_language"):
+        metadata["original_language"] = details["original_language"]
+    movie.provider_metadata = metadata
+    movie.enrichment_data = _DETAIL_CACHE.get(tmdb_id) or movie.enrichment_data or {}
     movie.tmdb_id = tmdb_id
     movie.slug = slug
     movie.title = title
@@ -172,12 +226,101 @@ def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult) -> None:
     if existing is None:
         db.add(movie)
         result.created_movies += 1
+        created = True
     else:
         result.updated_movies += 1
+        created = False
+    if used_slugs is not None:
+        used_slugs.add(movie.slug)
+    from app.services.omdb import fetch_movie_metadata
+    metadata = fetch_movie_metadata(movie)
+    if metadata:
+        movie.provider_metadata = {**(movie.provider_metadata or {}), **metadata}
     result.synced_movies += 1
+    return created
+
+
+def _upsert_movie_summary(
+    db: Session,
+    item: dict,
+    genre_map: dict[int, str],
+    result: TmdbSyncResult,
+    *,
+    used_slugs: set[str] | None = None,
+) -> bool:
+    tmdb_id = item.get("id")
+    title = (item.get("title") or "").strip()
+    release_date = _parse_date(item.get("release_date"))
+    if not isinstance(tmdb_id, int) or not title or release_date is None:
+        result.failed_movies += 1
+        result.errors.append(f"Skipped invalid TMDB summary payload: {tmdb_id or title or 'unknown'}")
+        return False
+
+    db.flush()  # Make pending imports visible before resolving IDs and slugs.
+    slug = _slugify(title)
+    existing = db.scalar(select(Movie).where(Movie.tmdb_id == tmdb_id))
+    slug = _resolve_slug_conflict(db, slug, tmdb_id, existing, used_slugs=used_slugs)
+
+    genres = [
+        genre_map[genre_id]
+        for genre_id in item.get("genre_ids", [])
+        if isinstance(genre_id, int) and genre_id in genre_map
+    ]
+    movie = existing or Movie(
+        tmdb_id=tmdb_id,
+        slug=slug,
+        title=title,
+        release_date=release_date,
+        status=_derive_status(release_date),
+        poster_url=None,
+        backdrop_url=None,
+        overview=None,
+        genres=[],
+        tmdb_popularity=0,
+    )
+
+    movie.enrichment_data = _DETAIL_CACHE.get(tmdb_id) or movie.enrichment_data or {}
+    movie.tmdb_id = tmdb_id
+    movie.slug = slug
+    movie.title = title
+    movie.release_date = release_date
+    movie.status = _derive_status(release_date)
+    movie.poster_url = _image_url(item.get("poster_path"))
+    movie.backdrop_url = _image_url(item.get("backdrop_path"))
+    movie.overview = item.get("overview") or None
+    movie.genres = genres
+    movie.tmdb_popularity = float(item.get("popularity") or 0.0)
+
+    analytics = next((snapshot for snapshot in movie.analytics_snapshots if snapshot.snapshot_label == "latest"), None)
+    if analytics is None:
+        analytics = MovieAnalytics(snapshot_label="latest")
+        movie.analytics_snapshots.append(analytics)
+
+    _populate_analytics(movie, analytics, {"popularity": item.get("popularity"), "videos": {"results": []}})
+
+    if existing is None:
+        db.add(movie)
+        result.created_movies += 1
+        created = True
+    else:
+        result.updated_movies += 1
+        created = False
+    if used_slugs is not None:
+        used_slugs.add(movie.slug)
+    from app.services.omdb import fetch_movie_metadata
+    metadata = fetch_movie_metadata(movie)
+    if metadata:
+        movie.provider_metadata = {**(movie.provider_metadata or {}), **metadata}
+    result.synced_movies += 1
+    return created
 
 
 def _populate_analytics(movie: Movie, analytics: MovieAnalytics, details: dict) -> None:
+    if analytics.id is not None:
+        trailer = _extract_trailer_url(details.get("videos", {}).get("results", []))
+        if trailer:
+            analytics.trailer_url = trailer
+        return  # A catalog refresh must not replace observed analytics with estimates.
     popularity = float(details.get("popularity") or 0.0)
     release_date = movie.release_date
     trailer_url = _extract_trailer_url(details.get("videos", {}).get("results", []))
@@ -239,6 +382,47 @@ def _tmdb_get(path: str, **params) -> dict:
         raise RuntimeError(f"TMDB request failed for {path} with HTTP {exc.code}: {detail}") from exc
     except URLError as exc:
         raise RuntimeError(f"TMDB request failed for {path}: {exc.reason}") from exc
+
+
+def _catalog_size(db: Session) -> int:
+    return int(db.scalar(select(func.count()).select_from(Movie)) or 0)
+
+
+def _tmdb_genre_map() -> dict[int, str]:
+    global _GENRE_CACHE
+    if _GENRE_CACHE is not None:
+        return _GENRE_CACHE
+
+    payload = _tmdb_get("genre/movie/list")
+    _GENRE_CACHE = {
+        genre["id"]: genre["name"]
+        for genre in payload.get("genres", [])
+        if isinstance(genre.get("id"), int) and genre.get("name")
+    }
+    return _GENRE_CACHE
+
+
+def _resolve_slug_conflict(
+    db: Session,
+    slug: str,
+    tmdb_id: int,
+    existing: Movie | None,
+    *,
+    used_slugs: set[str] | None = None,
+) -> str:
+    if used_slugs is not None and slug in used_slugs:
+        if existing is not None and existing.slug == slug:
+            return slug
+        return f"{slug}-{tmdb_id}"
+
+    owner = db.scalar(select(Movie).where(Movie.slug == slug))
+    if owner is None:
+        return slug
+    if existing is not None and owner.id == existing.id:
+        return slug
+    if owner.tmdb_id == tmdb_id:
+        return slug
+    return f"{slug}-{tmdb_id}"
 
 
 def _image_url(path: str | None) -> str | None:

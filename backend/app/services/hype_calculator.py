@@ -42,7 +42,7 @@ class HypeCalculator:
         ) / 14
 
         raw_sentiment = analytics_data.get("sentiment_score", 0)
-        sentiment = (raw_sentiment + 1) / 2 if raw_sentiment < 0 else raw_sentiment
+        sentiment = (raw_sentiment + 1) / 2
 
         momentum = analytics_data.get("momentum_score", 0.5)
         days_until_release = (release_date - datetime.now()).days

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -104,12 +104,12 @@ def build_training_rows(db: Session) -> list[DataRow]:
     for movie in movies:
         feature_snapshot = db.scalar(
             select(MovieFeatureSnapshot)
-            .where(MovieFeatureSnapshot.movie_id == movie.id)
+            .where(MovieFeatureSnapshot.movie_id == movie.id, MovieFeatureSnapshot.snapshot_at < datetime.combine(movie.release_date, datetime.min.time()), MovieFeatureSnapshot.feature_version == "observed-v1")
             .order_by(MovieFeatureSnapshot.snapshot_at.desc())
         )
         sentiment_snapshot = db.scalar(
             select(MovieSentimentSnapshot)
-            .where(MovieSentimentSnapshot.movie_id == movie.id)
+            .where(MovieSentimentSnapshot.movie_id == movie.id, MovieSentimentSnapshot.snapshot_at < datetime.combine(movie.release_date, datetime.min.time()))
             .order_by(MovieSentimentSnapshot.snapshot_at.desc())
         )
         if feature_snapshot is None:
@@ -120,8 +120,9 @@ def build_training_rows(db: Session) -> list[DataRow]:
             continue
 
         enrichment = get_enrichment(movie)
-        omdb = fetch_movie_metadata(movie) or {}
-        review_landscape = analyze_review_landscape(movie, movie.discussions, enrichment, omdb)
+        omdb = {}
+        discussions = [d for d in movie.discussions if d.created_at.replace(tzinfo=None) <= feature_snapshot.snapshot_at.replace(tzinfo=None)]
+        review_landscape = analyze_review_landscape(movie, discussions, enrichment, omdb)
         features = _feature_map(movie, feature_snapshot, sentiment_snapshot, review_landscape, enrichment)
         rows.append(
             DataRow(
@@ -138,12 +139,8 @@ def build_training_rows(db: Session) -> list[DataRow]:
 
 def split_rows(rows: list[DataRow]) -> dict[str, list[DataRow]]:
     ordered = sorted(rows, key=lambda row: row.release_date)
-    if len(ordered) < 6:
-        return {
-            "train": ordered,
-            "validation": ordered[-2:] if len(ordered) >= 2 else ordered,
-            "test": ordered[-2:] if len(ordered) >= 2 else ordered,
-        }
+    if len(ordered) < 30:
+        raise ValueError("Need at least 30 released titles with sourced revenue and observed pre-release features; demo estimates are not training data.")
 
     train_end = max(1, int(len(ordered) * 0.6))
     validation_end = max(train_end + 1, int(len(ordered) * 0.8))
@@ -225,7 +222,7 @@ def fit_linear_regression(X: list[list[float]], y: list[float]) -> dict:
 
 def evaluate_model(model: dict, X: list[list[float]], y: list[float]) -> dict:
     if not X or not y:
-        return {"mae": 0.0, "rmse": 0.0, "mape": 0.0}
+        raise ValueError("Cannot evaluate a model without held-out observations")
 
     predictions = []
     for row in X:
@@ -280,21 +277,10 @@ def _feature_map(
 
 
 def _targets_for_movie(movie: Movie) -> tuple[float, float]:
-    enrichment = get_enrichment(movie)
-    opening = 0.0
-    domestic = 0.0
-    for point in enrichment.get("box_office_history", []):
-        label = str(point.get("label", "")).lower()
-        value = float(point.get("value_usd") or 0.0)
-        if not opening and "opening" in label:
-            opening = value
-        if "domestic" in label and value > domestic:
-            domestic = value
-        elif "final" in label and value > domestic:
-            domestic = value
-        elif "outlook" in label and value > domestic:
-            domestic = value
-    return opening, domestic
+    target = (movie.provider_metadata or {}).get("box_office_targets", {})
+    if movie.release_date >= date.today() or not target.get("source_url") or not target.get("verified_at"):
+        return 0.0, 0.0
+    return float(target.get("opening_usd", 0)), float(target.get("domestic_usd", 0))
 
 
 def _matrix(rows: list[DataRow]) -> list[list[float]]:

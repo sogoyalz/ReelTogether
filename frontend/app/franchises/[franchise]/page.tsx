@@ -1,7 +1,7 @@
 import { EntityMovieGrid } from '@/components/discovery/EntityMovieGrid'
 
-export default function FranchisePage({ params }: { params: { franchise: string } }) {
-  const franchise = decodeURIComponent(params.franchise)
+export default async function FranchisePage({ params }: { params: Promise<{ franchise: string }> }) {
+  const franchise = decodeURIComponent((await params).franchise)
   return (
     <EntityMovieGrid
       eyebrow="Franchise"

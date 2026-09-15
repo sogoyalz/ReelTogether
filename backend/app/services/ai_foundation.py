@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
 from datetime import date, datetime, timedelta
+from collections import Counter
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,12 +17,7 @@ from app.models.ai import (
 from app.models.movie import Movie
 from app.services.catalog_enrichment import get_enrichment
 from app.services.omdb import fetch_movie_metadata
-from app.services.prediction_model import apply_prediction_snapshot, build_prediction_payload
-from app.services.review_analysis import (
-    analyze_review_landscape,
-    extract_top_themes,
-    sentiment_counts_from_discussions,
-)
+from app.services.review_analysis import analyze_review_landscape
 
 
 def ensure_ai_foundation(db: Session) -> None:
@@ -47,9 +42,6 @@ def ensure_ai_foundation_for_movie(db: Session, movie: Movie) -> bool:
 
 
 def get_ai_overview(db: Session, movie_id: int) -> dict | None:
-    movie = db.scalar(select(Movie).where(Movie.id == movie_id))
-    if movie is None:
-        return None
     sentiment = db.scalar(
         select(MovieSentimentSnapshot)
         .where(MovieSentimentSnapshot.movie_id == movie_id)
@@ -65,48 +57,31 @@ def get_ai_overview(db: Session, movie_id: int) -> dict | None:
         .where(MovieSummarySnapshot.movie_id == movie_id)
         .order_by(MovieSummarySnapshot.snapshot_at.desc())
     )
-    feature = db.scalar(
-        select(MovieFeatureSnapshot)
-        .where(MovieFeatureSnapshot.movie_id == movie_id)
-        .order_by(MovieFeatureSnapshot.snapshot_at.desc())
-    )
     discussions = list(
         db.scalars(
             select(MovieDiscussion)
             .where(MovieDiscussion.movie_id == movie_id)
             .order_by(MovieDiscussion.engagement_score.desc(), MovieDiscussion.created_at.desc())
-            .limit(12)
+            .limit(5)
         ).all()
     )
 
-    if not sentiment or not prediction or not summary or not feature:
+    discussions = [item for item in discussions if is_sourced_discussion(item)]
+    if not sentiment or not prediction or not summary:
         return None
-
-    enrichment = get_enrichment(movie)
-    omdb = fetch_movie_metadata(movie) or {}
-    review_landscape = analyze_review_landscape(movie, discussions, enrichment, omdb)
-    prediction_payload = build_prediction_payload(
-        movie=movie,
-        analytics=_latest_analytics(movie),
-        feature_snapshot=feature,
-        sentiment_snapshot=sentiment,
-        enrichment=enrichment,
-    )
 
     return {
         "sentiment": sentiment,
         "prediction": prediction,
         "summary": summary,
         "public_opinion": build_public_opinion(discussions),
-        "critic_vs_audience": review_landscape,
-        "prediction_payload": prediction_payload,
         "discussions": discussions,
     }
 
 
 def build_public_opinion(discussions: list[MovieDiscussion]) -> dict:
-    audience_discussions = [discussion for discussion in discussions if discussion.source in {"reddit", "youtube", "audience", "social"}]
-    if not audience_discussions:
+    discussions = [item for item in discussions if is_sourced_discussion(item)]
+    if not discussions:
         return {
             "overall_summary": "Public opinion is still limited for this title. More audience discussion is needed before a stable read emerges.",
             "positive_count": 0,
@@ -123,7 +98,7 @@ def build_public_opinion(discussions: list[MovieDiscussion]) -> dict:
     theme_counter: Counter[str] = Counter()
     highlighted_quotes: list[str] = []
 
-    for discussion in audience_discussions:
+    for discussion in discussions:
         sentiment = _discussion_sentiment(discussion)
         sentiment_counts[sentiment] += 1
         source_scores.setdefault(discussion.source, []).append(_sentiment_value(sentiment))
@@ -173,186 +148,105 @@ def build_public_opinion(discussions: list[MovieDiscussion]) -> dict:
 
 
 def _ensure_discussions(db: Session, movie: Movie) -> bool:
-    enrichment = get_enrichment(movie)
-    themes = movie.genres[:2] + ([enrichment.get("franchise")] if enrichment.get("franchise") else [])
-    templates = [
-        ("reddit", f"Early audience reaction to {movie.title}", "Fans are focusing on the scale, cast, and whether the story can match the hype."),
-        ("reddit", f"Is {movie.title} going to overperform?", "Discussion is centered on trailer momentum, franchise pull, and release timing."),
-        ("youtube", f"{movie.title} trailer comment summary", "Viewers are reacting to the visuals, tone, and standout cast moments from the trailer."),
-        ("critic", f"{movie.title} critic consensus", "Reviewers are weighing the direction, writing, performances, pacing, and overall craft."),
-        ("critic", f"{movie.title} awards and prestige read", "Press coverage is centered on awards potential, thematic depth, and whether the film has staying power."),
-    ]
-    dirty = False
-    for index, (source, title, body) in enumerate(templates, start=1):
-        external_id = f"{source}-{movie.slug}-{index}"
-        existing = db.scalar(
-            select(MovieDiscussion).where(MovieDiscussion.external_id == external_id).limit(1)
-        )
-        payload = json.dumps(
-            {
-                "movie": movie.slug,
-                "source": source,
-                "seeded": True,
-                "sentiment": "positive" if source == "critic" and movie.tmdb_popularity > 80 else "neutral",
-            }
-        )
-        text = f"{body} Key themes include {', '.join([theme for theme in themes if theme][:3]) or 'franchise potential'}."
-        if existing is not None:
-            existing.title = title
-            existing.body = text
-            existing.author = f"{source}_editorial_{index}"
-            existing.engagement_score = round(55 + movie.tmdb_popularity * 0.8 - index * 2, 2)
-            existing.url = f"https://example.com/{source}/{movie.slug}/{index}"
-            existing.raw_payload = payload
-            dirty = True
-            continue
-        discussion = MovieDiscussion(
-            movie_id=movie.id,
-            source=source,
-            external_id=external_id,
-            title=title,
-            body=text,
-            author=f"{source}_editorial_{index}",
-            engagement_score=round(55 + movie.tmdb_popularity * 0.8 - index * 2, 2),
-            url=f"https://example.com/{source}/{movie.slug}/{index}",
-            created_at=datetime.utcnow() - timedelta(hours=index * 7),
-            raw_payload=payload,
-        )
-        db.add(discussion)
-        dirty = True
-    return dirty
+    # Provider ingestion is the only source of discussions. Never synthesize quotes.
+    return False
+
+
+def is_sourced_discussion(discussion: MovieDiscussion) -> bool:
+    try:
+        payload = json.loads(discussion.raw_payload or "{}")
+    except (TypeError, json.JSONDecodeError):
+        payload = {}
+    return not payload.get("seeded") and bool(discussion.url) and "example.com" not in discussion.url
 
 
 def _ensure_sentiment_snapshot(db: Session, movie: Movie) -> bool:
-    snapshot = db.scalar(
-        select(MovieSentimentSnapshot)
-        .where(MovieSentimentSnapshot.movie_id == movie.id)
-        .order_by(MovieSentimentSnapshot.snapshot_at.desc())
-        .limit(1)
-    )
-    if snapshot is None:
-        snapshot = MovieSentimentSnapshot(movie_id=movie.id)
-        db.add(snapshot)
-
-    discussions = list(
-        db.scalars(
-            select(MovieDiscussion).where(MovieDiscussion.movie_id == movie.id)
-        ).all()
-    )
-    counts = sentiment_counts_from_discussions(discussions)
-    sample_size = sum(counts.values()) or 1
-    snapshot.snapshot_at = datetime.utcnow()
-    snapshot.positive_count = counts["positive"]
-    snapshot.neutral_count = counts["neutral"]
-    snapshot.negative_count = counts["negative"]
-    snapshot.sentiment_score = round((counts["positive"] - counts["negative"]) / sample_size, 2)
-    snapshot.sample_size = sample_size
-    snapshot.model_version = "hybrid-nlp-v2"
+    if _snapshot_is_current(db, MovieSentimentSnapshot, movie):
+        return False
+    discussions = [d for d in movie.discussions if is_sourced_discussion(d)]
+    opinion = build_public_opinion(discussions)
+    db.add(MovieSentimentSnapshot(
+        movie_id=movie.id, snapshot_at=datetime.utcnow(),
+        positive_count=opinion["positive_count"], neutral_count=opinion["neutral_count"],
+        negative_count=opinion["negative_count"], sentiment_score=opinion["average_sentiment"],
+        sample_size=len(discussions), model_version="stored-discussion-keywords-v1",
+    ))
     return True
 
 
 def _ensure_feature_snapshot(db: Session, movie: Movie) -> bool:
-    snapshot = db.scalar(
-        select(MovieFeatureSnapshot)
-        .where(MovieFeatureSnapshot.movie_id == movie.id)
-        .order_by(MovieFeatureSnapshot.snapshot_at.desc())
-        .limit(1)
-    )
-    if snapshot is None:
-        snapshot = MovieFeatureSnapshot(movie_id=movie.id)
-        db.add(snapshot)
+    if _snapshot_is_current(db, MovieFeatureSnapshot, movie):
+        return False
+
     analytics = _latest_analytics(movie)
-    omdb = fetch_movie_metadata(movie) or {}
+    omdb = movie.provider_metadata or {}
     views = analytics.youtube_views if analytics else 0
     likes = analytics.youtube_likes if analytics else 0
     comments = analytics.youtube_comments if analytics else 0
-    snapshot.snapshot_at = datetime.utcnow()
-    snapshot.release_days_until = (movie.release_date - date.today()).days
-    snapshot.trailer_views = views
-    snapshot.likes_to_views_ratio = round((likes / views) if views else 0.0, 4)
-    snapshot.comments_to_views_ratio = round((comments / views) if views else 0.0, 4)
-    snapshot.reddit_mentions = analytics.reddit_mentions if analytics else 0
-    snapshot.social_mentions = (analytics.x_mentions + analytics.reddit_mentions) if analytics else 0
-    snapshot.tmdb_popularity = movie.tmdb_popularity
-    snapshot.imdb_rating = _parse_float(omdb.get("imdb_rating"))
-    snapshot.sentiment_score = analytics.sentiment_score if analytics else 0.0
-    snapshot.feature_version = "hybrid-feature-v2"
+    feature = MovieFeatureSnapshot(
+        movie_id=movie.id,
+        snapshot_at=datetime.utcnow(),
+        release_days_until=(movie.release_date - date.today()).days,
+        trailer_views=views,
+        likes_to_views_ratio=round((likes / views) if views else 0.0, 4),
+        comments_to_views_ratio=round((comments / views) if views else 0.0, 4),
+        reddit_mentions=analytics.reddit_mentions if analytics else 0,
+        social_mentions=(analytics.x_mentions + analytics.reddit_mentions) if analytics else 0,
+        tmdb_popularity=movie.tmdb_popularity,
+        imdb_rating=_parse_float(omdb.get("imdb_rating")),
+        sentiment_score=analytics.sentiment_score if analytics else 0.0,
+        feature_version="bootstrap-feature-v1",
+    )
+    db.add(feature)
     return True
 
 
 def _ensure_prediction_snapshot(db: Session, movie: Movie) -> bool:
-    snapshot = db.scalar(
-        select(MoviePredictionSnapshot)
-        .where(MoviePredictionSnapshot.movie_id == movie.id)
-        .order_by(MoviePredictionSnapshot.snapshot_at.desc())
-        .limit(1)
-    )
-    if snapshot is None:
-        snapshot = MoviePredictionSnapshot(movie_id=movie.id)
-        db.add(snapshot)
-
-    analytics = _latest_analytics(movie)
-    feature_snapshot = db.scalar(
-        select(MovieFeatureSnapshot)
-        .where(MovieFeatureSnapshot.movie_id == movie.id)
-        .order_by(MovieFeatureSnapshot.snapshot_at.desc())
-        .limit(1)
-    )
-    sentiment_snapshot = db.scalar(
-        select(MovieSentimentSnapshot)
-        .where(MovieSentimentSnapshot.movie_id == movie.id)
-        .order_by(MovieSentimentSnapshot.snapshot_at.desc())
-        .limit(1)
-    )
-    if feature_snapshot is None:
+    if _snapshot_is_current(db, MoviePredictionSnapshot, movie):
         return False
 
-    payload = build_prediction_payload(
-        movie=movie,
-        analytics=analytics,
-        feature_snapshot=feature_snapshot,
-        sentiment_snapshot=sentiment_snapshot,
-        enrichment=get_enrichment(movie),
+    analytics = _latest_analytics(movie)
+    omdb = movie.provider_metadata or {}
+    rating = _parse_float(omdb.get("imdb_rating"))
+    franchise_bonus = 1.12 if get_enrichment(movie).get("franchise") else 1.0
+    rating_bonus = 1 + min(rating / 25, 0.28)
+    popularity_bonus = 1 + min(movie.tmdb_popularity / 220, 0.35)
+    opening = (analytics.predicted_opening_weekend_usd if analytics else 12_000_000.0) * franchise_bonus * rating_bonus
+    total = (analytics.predicted_domestic_total_usd if analytics else opening * 2.8) * popularity_bonus
+    confidence = 0.0  # No held-out calibration exists.
+    snapshot = MoviePredictionSnapshot(
+        movie_id=movie.id,
+        snapshot_at=datetime.utcnow(),
+        predicted_opening_weekend_usd=round(opening, 2),
+        predicted_domestic_total_usd=round(total, 2),
+        confidence_score=round(confidence, 2),
+        feature_version="bootstrap-feature-v1",
+        model_version="experimental-heuristic-v1",
     )
-    snapshot.snapshot_at = datetime.utcnow()
-    apply_prediction_snapshot(
-        snapshot,
-        payload,
-        feature_version="hybrid-feature-v2",
-        model_version="hybrid-forecast-v2",
-    )
+    db.add(snapshot)
     return True
 
 
 def _ensure_summary_snapshot(db: Session, movie: Movie) -> bool:
-    snapshot = db.scalar(
-        select(MovieSummarySnapshot)
-        .where(MovieSummarySnapshot.movie_id == movie.id)
-        .order_by(MovieSummarySnapshot.snapshot_at.desc())
-        .limit(1)
-    )
-    if snapshot is None:
-        snapshot = MovieSummarySnapshot(movie_id=movie.id, audience_summary="", critic_summary="", key_themes="")
-        db.add(snapshot)
+    if _snapshot_is_current(db, MovieSummarySnapshot, movie):
+        return False
 
-    discussions = list(
-        db.scalars(
-            select(MovieDiscussion).where(MovieDiscussion.movie_id == movie.id)
-        ).all()
-    )
     enrichment = get_enrichment(movie)
-    omdb = fetch_movie_metadata(movie) or {}
-    review_landscape = analyze_review_landscape(movie, discussions, enrichment, omdb)
-    themes = extract_top_themes(
-        discussions,
-        [theme for theme in [enrichment.get("franchise"), *movie.genres[:3], *enrichment.get("studios", [])[:1]] if theme],
-        limit=5,
+    omdb = movie.provider_metadata or {}
+    discussions = [d for d in movie.discussions if is_sourced_discussion(d)]
+    landscape = analyze_review_landscape(movie, discussions, enrichment, omdb)
+    audience_summary = landscape["audience"].summary if landscape["audience"].item_count else "No sourced audience discussions are stored."
+    critic_summary = landscape["critics"].summary if landscape["critics"].item_count else "No sourced critic discussions are stored."
+    themes = build_public_opinion(discussions)["top_themes"]
+    snapshot = MovieSummarySnapshot(
+        movie_id=movie.id,
+        snapshot_at=datetime.utcnow(),
+        audience_summary=audience_summary,
+        critic_summary=critic_summary,
+        key_themes=", ".join(themes[:5]),
+        model_version="stored-discussion-keywords-v1",
     )
-    snapshot.snapshot_at = datetime.utcnow()
-    snapshot.audience_summary = review_landscape["audience"].summary
-    snapshot.critic_summary = review_landscape["critics"].summary
-    snapshot.key_themes = ", ".join(themes[:5])
-    snapshot.model_version = "hybrid-review-v2"
+    db.add(snapshot)
     return True
 
 
@@ -412,3 +306,17 @@ def _extract_themes(text: str) -> list[str]:
         "action": ("action", "fight", "sequence"),
     }
     return [theme for theme, keywords in theme_map.items() if any(keyword in normalized for keyword in keywords)]
+
+
+def _snapshot_is_current(db: Session, model, movie: Movie) -> bool:
+    latest = db.scalar(select(model).where(model.movie_id == movie.id).order_by(model.snapshot_at.desc()))
+    if latest is None:
+        return False
+    version = getattr(latest, "model_version", getattr(latest, "feature_version", ""))
+    if "bootstrap" in version and model is not MovieFeatureSnapshot:
+        return False
+    analytics = _latest_analytics(movie)
+    dates = [movie.updated_at, movie.created_at, analytics.last_updated if analytics else None]
+    dates.extend(d.created_at for d in movie.discussions if is_sourced_discussion(d))
+    newest = max((d.replace(tzinfo=None) for d in dates if d), default=datetime.min)
+    return latest.snapshot_at.replace(tzinfo=None) >= newest

@@ -1,7 +1,7 @@
 import { EntityMovieGrid } from '@/components/discovery/EntityMovieGrid'
 
-export default function PersonPage({ params }: { params: { name: string } }) {
-  const name = decodeURIComponent(params.name)
+export default async function PersonPage({ params }: { params: Promise<{ name: string }> }) {
+  const name = decodeURIComponent((await params).name)
   return (
     <EntityMovieGrid
       eyebrow="People"

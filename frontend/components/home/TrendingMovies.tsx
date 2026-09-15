@@ -2,15 +2,16 @@
 
 import { useQuery } from '@tanstack/react-query'
 
-import { movieApi } from '@/lib/api'
+import { movieApi, type MovieSummary } from '@/lib/api'
 import { ErrorState, LoadingState } from '@/components/shared/QueryState'
 
 import { MovieCard } from '../shared/MovieCard'
 
-export function TrendingMovies() {
+export function TrendingMovies({ movies }: { movies?: MovieSummary[] }) {
   const { data, isLoading } = useQuery({
     queryKey: ['trending-movies'],
     queryFn: () => movieApi.getTrending(),
+    initialData: movies,
   })
 
   if (isLoading) {

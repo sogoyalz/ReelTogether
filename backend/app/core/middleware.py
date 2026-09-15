@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import logging
+import hashlib
+import hmac
 import time
 import uuid
 from collections import defaultdict, deque
@@ -7,6 +11,7 @@ from collections.abc import Callable
 from threading import Lock
 
 from fastapi import Request
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
@@ -16,9 +21,21 @@ from app.services.redis_store import sliding_window_allow
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+        request_id = str(uuid.uuid4())
+        started = time.perf_counter()
         request.state.request_id = request_id
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as error:
+            # Never log request bodies, cookies, query strings, or exception messages.
+            logging.getLogger("requests").error(json.dumps({"event": "request_failed", "request_id": request_id, "error_type": type(error).__name__}))
+            response = JSONResponse(status_code=500, content={"detail": "An unexpected error occurred", "request_id": request_id})
+        route = request.scope.get("route")
+        logging.getLogger("requests").info(json.dumps({"event": "request", "request_id": request_id,
+            "method": request.method, "route": getattr(route, "path", "unmatched"), "status": response.status_code,
+            "duration_ms": round((time.perf_counter() - started) * 1000, 2)}))
+        if request.url.path.startswith(("/api/auth", "/api/watchlist", "/api/assistant", "/api/movie-nights")):
+            response.headers["Cache-Control"] = "private, no-store"
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -40,11 +57,17 @@ class InMemoryRateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_host = request.client.host if request.client else "unknown"
-        key = f"{client_host}:{request.url.path}"
+        token = request.headers.get("x-movie-client", "")
+        if settings.PROXY_SHARED_SECRET and "." in token:
+            identity, signature = token.rsplit(".", 1)
+            expected = hmac.new(settings.PROXY_SHARED_SECRET.encode(), identity.encode(), hashlib.sha256).hexdigest()
+            if len(identity) == 36 and hmac.compare_digest(signature, expected):
+                client_host = "browser:" + identity
+        key = client_host
         now = time.monotonic()
         window_seconds = 60
         limit = settings.RATE_LIMIT_REQUESTS_PER_MINUTE + settings.RATE_LIMIT_BURST_REQUESTS
-        redis_allowed, retry_after = sliding_window_allow(f"rate-limit:{key}", limit, window_seconds)
+        redis_allowed, retry_after = await run_in_threadpool(sliding_window_allow, f"rate-limit:{key}", limit, window_seconds)
         if not redis_allowed:
             return JSONResponse(
                 status_code=429,
@@ -56,6 +79,8 @@ class InMemoryRateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         with self._lock:
+            for stale in [k for k, v in self._requests.items() if not v or now - v[-1] > window_seconds]:
+                del self._requests[stale]
             entries = self._requests[key]
             while entries and now - entries[0] > window_seconds:
                 entries.popleft()

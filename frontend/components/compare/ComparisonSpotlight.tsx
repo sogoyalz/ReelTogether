@@ -20,21 +20,25 @@ const categoryMeta = [
   },
   {
     key: 'youtube_views',
-    label: 'Trailer Reach',
-    description: 'Largest trailer audience so far.',
+    label: 'Estimated Reach',
+    description: 'Largest modeled trailer audience so far.',
     format: (item: ComparisonItem) => formatCompactNumber(item.youtube_views),
   },
   {
     key: 'social_mentions',
-    label: 'Social Chatter',
-    description: 'Most visible conversation volume.',
+    label: 'Estimated Chatter',
+    description: 'Most visible modeled conversation volume.',
     format: (item: ComparisonItem) => formatCompactNumber(item.social_mentions),
   },
   {
     key: 'predicted_opening_weekend_usd',
-    label: 'Opening Weekend',
-    description: 'Strongest projected opening weekend.',
-    format: (item: ComparisonItem) => formatCurrency(item.predicted_opening_weekend_usd),
+    label: 'Opening Model',
+    description: 'Strongest public theatrical forecast currently allowed.',
+    format: (item: ComparisonItem) => (
+      item.forecast_is_public && item.predicted_opening_weekend_usd > 0
+        ? formatCurrency(item.predicted_opening_weekend_usd)
+        : item.box_office || 'n/a'
+    ),
   },
   {
     key: 'tmdb_popularity',
@@ -105,11 +109,11 @@ export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
               </div>
               <div className="compare-stat-grid">
                 <div>
-                  <div className="metric-label">Trailer Views</div>
+                  <div className="metric-label">Estimated Reach</div>
                   <div>{formatCompactNumber(item.youtube_views)}</div>
                 </div>
                 <div>
-                  <div className="metric-label">Social</div>
+                  <div className="metric-label">Estimated Social</div>
                   <div>{formatCompactNumber(item.social_mentions)}</div>
                 </div>
                 <div>
@@ -117,8 +121,8 @@ export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
                   <div>{Math.round(item.sentiment_score * 100)}%</div>
                 </div>
                 <div>
-                  <div className="metric-label">Opening</div>
-                  <div>{formatCurrency(item.predicted_opening_weekend_usd)}</div>
+                  <div className="metric-label">{item.forecast_is_public ? 'Opening Model' : 'Reported Box Office'}</div>
+                  <div>{item.forecast_is_public && item.predicted_opening_weekend_usd > 0 ? formatCurrency(item.predicted_opening_weekend_usd) : item.box_office || 'n/a'}</div>
                 </div>
                 <div>
                   <div className="metric-label">Runtime</div>
@@ -133,10 +137,15 @@ export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
                   <div>{item.prediction_confidence !== null ? `${Math.round(item.prediction_confidence * 100)}%` : 'n/a'}</div>
                 </div>
                 <div>
-                  <div className="metric-label">Domestic Total</div>
-                  <div>{formatCurrency(item.predicted_domestic_total_usd)}</div>
+                  <div className="metric-label">{item.forecast_is_public ? 'Domestic Model' : 'Forecast Status'}</div>
+                  <div>{item.forecast_is_public && item.predicted_domestic_total_usd > 0 ? formatCurrency(item.predicted_domestic_total_usd) : item.forecast_status}</div>
                 </div>
               </div>
+              {item.warnings.length ? (
+                <p className="meta" style={{ marginTop: 14 }}>
+                  {item.warnings[0]}
+                </p>
+              ) : null}
               {item.streaming_on.length ? (
                 <div className="meta-line" style={{ marginTop: 14 }}>
                   <span className="meta-kicker">Streaming</span>

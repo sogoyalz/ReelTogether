@@ -19,5 +19,6 @@ export function formatReleaseDate(date: string) {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone: 'UTC',
   })
 }

@@ -1,3 +1,4 @@
+import { WatchlistButton } from './WatchlistButton'
 import type { MovieAnalytics, MovieDetail } from '@/lib/api'
 import { formatCompactNumber, formatCurrency, formatReleaseDate } from '@/lib/formatters'
 
@@ -9,6 +10,14 @@ export function MovieHero({
   analytics: MovieAnalytics
 }) {
   const backdrop = movie.backdrop_url || movie.poster_url
+  const openingLabel = analytics.forecast_is_public
+    ? movie.status === 'released'
+      ? 'Modeled Opening'
+      : 'Projected Opening Weekend'
+    : 'Opening Weekend'
+  const openingValue = analytics.forecast_is_public && analytics.predicted_opening_weekend_usd > 0
+    ? formatCurrency(analytics.predicted_opening_weekend_usd)
+    : 'Unavailable'
 
   return (
     <section className="hero-panel movie-hero-panel">
@@ -18,6 +27,7 @@ export function MovieHero({
         </div>
       ) : null}
       <div className="movie-hero-copy">
+        <WatchlistButton movieId={movie.id} />
         <span className="eyebrow">{movie.status}</span>
         <div className="title-row movie-hero-title-row" style={{ marginTop: 16 }}>
           <div className="movie-hero-title-block">
@@ -40,22 +50,27 @@ export function MovieHero({
         </div>
         <div className="metrics-grid" style={{ marginTop: 20 }}>
           <div className="metric-card">
-            <div className="metric-label">Trailer Views</div>
+            <div className="metric-label">Estimated Trailer Reach</div>
             <div className="metric-value">{formatCompactNumber(analytics.youtube_views)}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Social Mentions</div>
+            <div className="metric-label">Estimated Social Mentions</div>
             <div className="metric-value">{formatCompactNumber(analytics.social_mentions)}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Google Trends</div>
+            <div className="metric-label">Estimated Search Demand</div>
             <div className="metric-value">{analytics.google_trends_score}</div>
           </div>
           <div className="metric-card">
-            <div className="metric-label">Opening Weekend</div>
-            <div className="metric-value">{formatCurrency(analytics.predicted_opening_weekend_usd)}</div>
+            <div className="metric-label">{openingLabel}</div>
+            <div className="metric-value">{openingValue}</div>
           </div>
         </div>
+        {analytics.forecast_note || analytics.engagement_metrics_note || movie.warnings.length ? (
+          <p className="meta" style={{ marginTop: 16 }}>
+            {[analytics.forecast_note, analytics.engagement_metrics_note, movie.warnings[0]].filter(Boolean).join(' ')}
+          </p>
+        ) : null}
       </div>
     </section>
   )

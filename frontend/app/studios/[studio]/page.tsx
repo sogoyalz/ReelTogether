@@ -1,7 +1,7 @@
 import { EntityMovieGrid } from '@/components/discovery/EntityMovieGrid'
 
-export default function StudioPage({ params }: { params: { studio: string } }) {
-  const studio = decodeURIComponent(params.studio)
+export default async function StudioPage({ params }: { params: Promise<{ studio: string }> }) {
+  const studio = decodeURIComponent((await params).studio)
   return (
     <EntityMovieGrid
       eyebrow="Studio"

@@ -5,12 +5,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import urlopen
 
+from app.services.cache import ExpiringMap
 from app.models.movie import Movie
 
 WIKIDATA_SEARCH_URL = "https://www.wikidata.org/w/api.php"
 WIKIDATA_ENTITY_URL = "https://www.wikidata.org/wiki/Special:EntityData"
 WIKIDATA_PAGE_URL = "https://www.wikidata.org/wiki"
-_CACHE: dict[str, dict[str, str | list[str] | None] | None] = {}
+_CACHE = ExpiringMap()
 
 
 def fetch_movie_wikidata(movie: Movie) -> dict[str, str | list[str] | None] | None:

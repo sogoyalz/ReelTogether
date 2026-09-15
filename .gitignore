@@ -1,3 +1,7 @@
+.pycache/
+__pycache__/
+*.pyc
+movie_analytics.db
 backend/.env
 backend/movie_analytics.db
 frontend/.env.local
@@ -8,3 +12,22 @@ frontend/.next/
 frontend/node_modules/
 frontend/out/
 *.DS_Store
+
+# Generated Next build backups and repair artifacts
+frontend/.next*/
+frontend/test-results/
+frontend/playwright-report/
+*.tsbuildinfo
+*.db.backup*
+
+.env
+
+*.sqlite
+*.sqlite3
+
+# Local verification artifacts and generated editor instructions
+/docs/screenshots/
+/docs/verification/
+/review-evidence/
+/frontend/AGENTS.md
+/frontend/CLAUDE.md

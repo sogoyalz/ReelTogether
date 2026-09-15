@@ -1,8 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Movie Analytics API"
+    APP_NAME: str = "ReelTogether API"
     APP_VERSION: str = "0.2.0"
     API_V1_PREFIX: str = "/api"
     ENVIRONMENT: str = "development"
@@ -14,6 +15,15 @@ class Settings(BaseSettings):
     TMDB_API_KEY: str = ""
     YOUTUBE_API_KEY: str = ""
     OMDB_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    OPENAI_CHAT_MODEL: str = "gpt-4.1-mini"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_CHAT_MODEL: str = "claude-3-5-sonnet-latest"
+    AI_CHAT_PROVIDER: str = "openai"
+    ENABLE_ASSISTANT_AI: bool = False
+    ASSISTANT_AI_CALLS_PER_HOUR: int = Field(60, ge=1, le=1000)
+    USE_LIGHTWEIGHT_SENTIMENT: bool = True
     REDDIT_CLIENT_ID: str = ""
     REDDIT_CLIENT_SECRET: str = ""
 
@@ -25,6 +35,9 @@ class Settings(BaseSettings):
         "localhost",
         "127.0.0.1",
     ]
+    PROXY_SHARED_SECRET: str = ""
+    ENABLE_USER_FEATURES: bool = False
+    ENABLE_RAG: bool = False
     ENABLE_DOCS: bool = True
     ENABLE_STARTUP_SYNC: bool = True
     ENABLE_RATE_LIMIT: bool = True
@@ -42,6 +55,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
     @property
@@ -55,6 +69,14 @@ class Settings(BaseSettings):
     @property
     def tmdb_api_configured(self) -> bool:
         return bool(self.TMDB_API_KEY.strip())
+
+    @property
+    def openai_api_configured(self) -> bool:
+        return bool(self.OPENAI_API_KEY.strip())
+
+    @property
+    def anthropic_api_configured(self) -> bool:
+        return bool(self.ANTHROPIC_API_KEY.strip())
 
     @property
     def is_production(self) -> bool:

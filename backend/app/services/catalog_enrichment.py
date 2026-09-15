@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from datetime import date, datetime, timedelta
 
 from app.models.movie import Movie, MovieAnalytics
@@ -272,28 +274,24 @@ def get_enrichment(movie: Movie, allow_network: bool = False) -> dict:
         "trailer_embed_url": trailer_embed_url,
         "logo_url": tmdb.get("logo_url"),
         "backdrops": tmdb.get("backdrops", []),
-        "box_office_history": base.get("box_office_history", []),
+        "box_office_history": [],  # Static demo outlooks are not observed revenue history.
     }
 
 
 def build_history(movie: Movie, analytics: MovieAnalytics) -> list[dict]:
-    seed = (sum(ord(char) for char in movie.slug) % 7) + 3
-    history = []
-    multipliers = [0.34, 0.49, 0.63, 0.77, 0.91, 1.0]
-
-    for index, multiplier in enumerate(multipliers):
-        history.append(
-            {
-                "snapshot_date": analytics.snapshot_date - timedelta(days=(len(multipliers) - index - 1) * 7),
-                "buzz_score": round(max(0.0, analytics.buzz_score * multiplier - seed), 2),
-                "hype_score": round(max(0.0, analytics.hype_score * multiplier - seed / 2), 2),
-                "youtube_views": int(analytics.youtube_views * multiplier),
-                "social_mentions": int((analytics.x_mentions + analytics.reddit_mentions) * multiplier),
-                "google_trends_score": round(max(0.0, analytics.google_trends_score * multiplier), 2),
-            }
-        )
-
-    return history
+    # Return only stored snapshots; never manufacture a past growth curve.
+    by_date = {item.snapshot_date: item for item in movie.analytics_snapshots}
+    return [
+        {
+            "snapshot_date": item.snapshot_date,
+            "buzz_score": item.buzz_score,
+            "hype_score": item.hype_score,
+            "youtube_views": item.youtube_views,
+            "social_mentions": item.x_mentions + item.reddit_mentions,
+            "google_trends_score": item.google_trends_score,
+        }
+        for item in sorted(by_date.values(), key=lambda item: item.snapshot_date)
+    ]
 
 
 def build_score_breakdown(movie: Movie, analytics: MovieAnalytics) -> dict:
@@ -301,11 +299,11 @@ def build_score_breakdown(movie: Movie, analytics: MovieAnalytics) -> dict:
     release_proximity = max(0, min(1, 1 - abs(days_until_release) / 365))
     youtube_interest = min(
         1.0,
-        (analytics.youtube_views + analytics.youtube_likes * 8 + analytics.youtube_comments * 12) / 75_000_000,
+        math.log1p(analytics.youtube_views + analytics.youtube_likes * 8 + analytics.youtube_comments * 12) / 18,
     )
     search_interest = min(1.0, analytics.google_trends_score / 100)
-    social_buzz = min(1.0, (analytics.x_mentions + analytics.reddit_mentions) / 450_000)
-    sentiment = min(1.0, max(0.0, analytics.sentiment_score))
+    social_buzz = min(1.0, math.log1p(analytics.x_mentions + analytics.reddit_mentions) / 14)
+    sentiment = min(1.0, max(0.0, (analytics.sentiment_score + 1) / 2))
     momentum = min(1.0, max(0.0, analytics.momentum_score))
 
     return {

@@ -9,13 +9,13 @@ from app.schemas.discovery import (
     DiscoveryDashboardResponse,
     DiscoveryMovieSummary,
 )
-from app.schemas.movie import CatalogFacets, MovieSummary, PaginatedMovieSummaries
+from app.schemas.movie import CatalogFacets, PaginatedMovieSummaries
 from app.db.session import get_db
 from app.models.movie import Movie
 from app.repositories import movies as movie_repository
 from app.services.catalog_browser import CatalogBrowseFilters, browse_catalog
 from app.services.catalog_enrichment import get_enrichment
-from app.services.omdb import fetch_movie_metadata
+from app.api.movies import _serialize_summary_fast
 from app.services.tmdb import sync_tmdb_search_results
 
 router = APIRouter()
@@ -38,12 +38,13 @@ def _ensure_search_inventory(db: Session, query: str, minimum_matches: int, impo
 
 
 @router.get("", response_model=PaginatedMovieSummaries)
-async def search_movies(
+def search_movies(
     q: str = Query(..., min_length=1),
     status: str | None = Query(default=None),
     genre: str | None = Query(default=None),
     franchise: str | None = Query(default=None),
     studio: str | None = Query(default=None),
+    director: str | None = Query(default=None),
     year: int | None = Query(default=None),
     min_rating: float | None = Query(default=None, ge=0, le=10),
     min_hype: float | None = Query(default=None, ge=0, le=100),
@@ -54,7 +55,6 @@ async def search_movies(
     db: Session = Depends(get_db),
 ):
     query = q.strip().lower()
-    _ensure_search_inventory(db, query, minimum_matches=6, import_limit=4)
     result = browse_catalog(
         db,
         CatalogBrowseFilters(
@@ -63,6 +63,7 @@ async def search_movies(
             genre=genre if genre and genre != "all" else None,
             franchise=franchise if franchise and franchise != "all" else None,
             studio=studio if studio and studio != "all" else None,
+            director=director if director and director != "all" else None,
             year=year,
             min_rating=min_rating,
             min_hype=min_hype,
@@ -72,42 +73,8 @@ async def search_movies(
             page_size=page_size,
         ),
     )
-    response = []
-    for movie in result.movies:
-        analytics = _latest_analytics(movie)
-        if analytics is None:
-            continue
-        enrichment = get_enrichment(movie)
-        omdb_metadata = fetch_movie_metadata(movie) or {}
-        response.append(
-            MovieSummary(
-                id=movie.id,
-                tmdb_id=movie.tmdb_id,
-                slug=movie.slug,
-                title=movie.title,
-                release_date=movie.release_date,
-                status=movie.status,
-                poster_url=movie.poster_url,
-                backdrop_url=movie.backdrop_url,
-                overview=movie.overview,
-                genres=movie.genres,
-                tmdb_popularity=movie.tmdb_popularity,
-                buzz_score=analytics.buzz_score,
-                hype_score=analytics.hype_score,
-                franchise=enrichment["franchise"],
-                studios=enrichment["studios"],
-                streaming_on=enrichment["streaming_on"],
-                directors=enrichment["directors"],
-                cast=enrichment["cast"],
-                imdb_rating=omdb_metadata.get("imdb_rating"),
-                rated=omdb_metadata.get("rated"),
-                runtime=omdb_metadata.get("runtime"),
-                rotten_tomatoes=omdb_metadata.get("rotten_tomatoes"),
-                logo_url=enrichment.get("logo_url"),
-            )
-        )
     return PaginatedMovieSummaries(
-        items=response,
+        items=[_serialize_summary_fast(movie) for movie in result.movies],
         total=result.total,
         page=result.page,
         page_size=result.page_size,
@@ -117,12 +84,9 @@ async def search_movies(
 
 
 @router.get("/suggest", response_model=list[AutocompleteSuggestion])
-async def suggest_movies(q: str = Query(..., min_length=1), limit: int = Query(default=6, ge=1, le=10), db: Session = Depends(get_db)):
+def suggest_movies(q: str = Query(..., min_length=1), limit: int = Query(default=6, ge=1, le=10), db: Session = Depends(get_db)):
     query = q.strip().lower()
-    matches = movie_repository.search_movies(db, query)
-    if len(query) >= 4 and len(matches) < max(2, limit // 2):
-        matches = _ensure_search_inventory(db, query, minimum_matches=max(2, limit // 2), import_limit=min(limit, 3))
-    matches = matches[:limit]
+    matches = movie_repository.search_movies(db, query, limit=limit)
     return [
         AutocompleteSuggestion(
             id=movie.id,
@@ -136,7 +100,7 @@ async def suggest_movies(q: str = Query(..., min_length=1), limit: int = Query(d
 
 
 @router.get("/dashboard", response_model=DiscoveryDashboardResponse)
-async def discovery_dashboard(db: Session = Depends(get_db)):
+def discovery_dashboard(db: Session = Depends(get_db)):
     movies = movie_repository.list_movies(db)
     summaries: list[DiscoveryMovieSummary] = []
     genre_buckets: dict[str, list[float]] = defaultdict(list)
@@ -179,7 +143,7 @@ async def discovery_dashboard(db: Session = Depends(get_db)):
     editorial_collections = {
         "most_hyped_upcoming_sci_fi": [
             movie for movie in sorted(
-                [summary for summary in summaries if summary.status != "released" and "Sci-Fi" in summary.genres],
+                [summary for summary in summaries if summary.status != "released" and "Science Fiction" in summary.genres],
                 key=lambda item: item.hype_score,
                 reverse=True,
             )[:4]

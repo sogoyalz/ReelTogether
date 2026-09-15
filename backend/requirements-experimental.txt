@@ -1,0 +1,5 @@
+# Optional RAG/transformer experiments; separate from the supported core app.
+-r requirements.txt
+sentence-transformers==3.4.1
+chromadb==0.5.23
+transformers==4.46.3

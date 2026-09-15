@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from typing import Any
 
 from redis import Redis
@@ -13,24 +14,24 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _client: Redis | None = None
-_client_failed = False
+_retry_at = 0.0
 
 
 def get_redis_client() -> Redis | None:
-    global _client, _client_failed
+    global _client, _retry_at
     if _client is not None:
         return _client
-    if _client_failed or not settings.REDIS_URL.strip():
+    if time.monotonic() < _retry_at or not settings.REDIS_URL.strip():
         return None
 
     try:
-        client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        client = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_timeout=0.5, socket_connect_timeout=0.5)
         client.ping()
         _client = client
         return _client
     except RedisError as exc:
         logger.warning("Redis unavailable, falling back to in-process storage: %s", exc)
-        _client_failed = True
+        _retry_at = time.monotonic() + 30
         return None
 
 
@@ -78,18 +79,15 @@ def sliding_window_allow(key: str, limit: int, window_seconds: int) -> tuple[boo
         return True, 0
 
     now = time.time()
-    cutoff = now - window_seconds
+    script = """
+    redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[1])
+    if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[2]) then return 0 end
+    redis.call('ZADD', KEYS[1], ARGV[3], ARGV[4])
+    redis.call('EXPIRE', KEYS[1], ARGV[5])
+    return 1
+    """
     try:
-        pipe = client.pipeline()
-        pipe.zremrangebyscore(key, 0, cutoff)
-        pipe.zcard(key)
-        pipe.zadd(key, {str(now): now})
-        pipe.expire(key, window_seconds)
-        _, count, _, _ = pipe.execute()
+        allowed = bool(client.eval(script, 1, key, now - window_seconds, limit, now, str(uuid.uuid4()), window_seconds))
     except RedisError:
         return True, 0
-
-    if int(count) >= limit:
-        retry_after = max(1, window_seconds)
-        return False, retry_after
-    return True, 0
+    return allowed, 0 if allowed else window_seconds

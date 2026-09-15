@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -27,6 +27,10 @@ class MovieBase(BaseModel):
     runtime: str | None = None
     rotten_tomatoes: str | None = None
     logo_url: str | None = None
+    data_quality: str = "medium"
+    field_sources: dict[str, str] = {}
+    last_verified_at: datetime | None = None
+    warnings: list[str] = []
 
 
 class MovieSummary(MovieBase):
@@ -42,6 +46,11 @@ class MovieDetail(MovieSummary):
     sentiment_score: float
     predicted_opening_weekend_usd: float
     predicted_domestic_total_usd: float
+    forecast_is_public: bool = True
+    forecast_status: str = "public"
+    forecast_note: str = ""
+    engagement_metrics_are_estimated: bool = True
+    engagement_metrics_note: str = ""
     imdb_id: str | None = None
     box_office: str | None = None
     awards: str | None = None
@@ -68,6 +77,7 @@ class CatalogFacets(BaseModel):
     genres: list[str] = []
     franchises: list[str] = []
     studios: list[str] = []
+    directors: list[str] = []
     streaming: list[str] = []
     statuses: list[str] = []
     years: list[int] = []

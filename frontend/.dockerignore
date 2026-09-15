@@ -2,3 +2,7 @@
 node_modules
 .next
 npm-debug.log
+
+.next*
+test-results
+playwright-report

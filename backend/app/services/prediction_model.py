@@ -182,6 +182,112 @@ def _predict_with_trained_artifact(
     return predictions
 
 
+def is_non_theatrical_release(
+    movie: Movie,
+    *,
+    enrichment: dict | None = None,
+    box_office: str | None = None,
+) -> bool:
+    """Return True if a title is very likely streaming-first / non-theatrical."""
+    enrichment = enrichment or {}
+    streaming_providers = enrichment.get("streaming_on", [])
+    studios = [s.lower() for s in enrichment.get("studios", [])]
+
+    # Already has real box-office revenue → definitely theatrical
+    if box_office and box_office not in ("N/A", "", None):
+        return False
+
+    # Released but zero theatrical revenue and distributed on a streaming platform
+    if movie.status == "released" and streaming_providers and not any(
+        word in " ".join(studios) for word in ("disney", "universal", "warner", "paramount", "sony", "lionsgate")
+    ):
+        return True
+
+    # Streaming platforms as the only known distributor for upcoming titles
+    streaming_only_platforms = {"netflix", "amazon prime", "apple tv+", "disney+", "hulu", "max", "hbo max", "peacock"}
+    providers_lower = {p.lower() for p in streaming_providers}
+    if providers_lower and providers_lower.issubset(streaming_only_platforms) and not studios:
+        return True
+
+    return False
+
+
+def normalize_public_forecast(
+    movie: Movie,
+    *,
+    enrichment: dict | None = None,
+    box_office: str | None = None,
+    opening: float = 0.0,
+    domestic: float = 0.0,
+    confidence: float = 0.0,
+    opening_low: float = 0.0,
+    opening_high: float = 0.0,
+    domestic_low: float = 0.0,
+    domestic_high: float = 0.0,
+) -> dict:
+    """Build a sanitised forecast payload for public consumption."""
+    enrichment = enrichment or {}
+    non_theatrical = is_non_theatrical_release(movie, enrichment=enrichment, box_office=box_office)
+
+    # Suppress theatrical forecasts for streaming-first titles
+    if non_theatrical:
+        return {
+            "predicted_opening_weekend_usd": 0.0,
+            "predicted_domestic_total_usd": 0.0,
+            "confidence_score": 0.0,
+            "opening_weekend_low_usd": 0.0,
+            "opening_weekend_high_usd": 0.0,
+            "domestic_total_low_usd": 0.0,
+            "domestic_total_high_usd": 0.0,
+            "forecast_is_public": False,
+            "forecast_status": "suppressed",
+            "forecast_note": "Theatrical forecast suppressed — title appears to be streaming-first.",
+            "engagement_metrics_are_estimated": True,
+            "engagement_metrics_note": "Audience attention metrics are modeled estimates.",
+            "methodology": None,
+            "feature_importance": [],
+        }
+
+    # Use real box-office data if available (released films)
+    if box_office and box_office not in ("N/A", "", None):
+        return {
+            "predicted_opening_weekend_usd": 0.0,
+            "predicted_domestic_total_usd": 0.0,
+            "confidence_score": 1.0,
+            "opening_weekend_low_usd": 0.0,
+            "opening_weekend_high_usd": 0.0,
+            "domestic_total_low_usd": 0.0,
+            "domestic_total_high_usd": 0.0,
+            "forecast_is_public": True,
+            "forecast_status": "actuals_available",
+            "forecast_note": "Sourced box-office actuals are available via OMDB.",
+            "engagement_metrics_are_estimated": True,
+            "engagement_metrics_note": "Box-office actuals do not verify audience attention estimates.",
+            "methodology": None,
+            "feature_importance": [],
+        }
+
+    forecast_is_public = opening > 0 or domestic > 0
+    return {
+        "predicted_opening_weekend_usd": round(opening, 2) if opening else 0.0,
+        "predicted_domestic_total_usd": round(domestic, 2) if domestic else 0.0,
+        "confidence_score": round(confidence, 2),
+        "opening_weekend_low_usd": round(opening_low, 2) if opening_low else 0.0,
+        "opening_weekend_high_usd": round(opening_high, 2) if opening_high else 0.0,
+        "domestic_total_low_usd": round(domestic_low, 2) if domestic_low else 0.0,
+        "domestic_total_high_usd": round(domestic_high, 2) if domestic_high else 0.0,
+        "forecast_is_public": forecast_is_public,
+        "forecast_status": "modeled" if forecast_is_public else "unavailable",
+        "forecast_note": "Forecast is a model estimate based on social signals, trailer reach, and engagement data."
+        if forecast_is_public
+        else "Insufficient data to generate a public forecast for this title.",
+        "engagement_metrics_are_estimated": True,
+        "engagement_metrics_note": "Audience attention metrics are modeled estimates unless a provider feed explicitly verifies them.",
+        "methodology": "Weighted feature model combining trailer reach, social buzz, search demand, sentiment, and franchise signals.",
+        "feature_importance": [],
+    }
+
+
 def _trained_model_weight(artifact: dict) -> float:
     training_count = artifact.get("training_count", 0)
     opening_mape = artifact.get("targets", {}).get("opening", {}).get("test_metrics", {}).get("mape", 100.0)

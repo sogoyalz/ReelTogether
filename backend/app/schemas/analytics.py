@@ -26,6 +26,15 @@ class MovieAnalyticsResponse(BaseModel):
     hype_score: float
     predicted_opening_weekend_usd: float
     predicted_domestic_total_usd: float
+    forecast_is_public: bool
+    forecast_status: str
+    forecast_note: str
+    engagement_metrics_are_estimated: bool
+    engagement_metrics_note: str
+    data_quality: str
+    field_sources: dict[str, str]
+    last_verified_at: datetime | None = None
+    warnings: list[str]
     trailer_url: str | None = None
     updated_at: datetime
     score_breakdown: "ScoreBreakdown"
@@ -69,10 +78,20 @@ class ComparisonEntry(BaseModel):
     sentiment_score: float
     predicted_opening_weekend_usd: float
     predicted_domestic_total_usd: float
+    forecast_is_public: bool
+    forecast_status: str
+    forecast_note: str
+    engagement_metrics_are_estimated: bool
+    engagement_metrics_note: str
+    data_quality: str
+    field_sources: dict[str, str]
+    last_verified_at: datetime | None = None
+    warnings: list[str]
     tmdb_popularity: float
     imdb_rating: str | None = None
     rotten_tomatoes: str | None = None
     runtime: str | None = None
+    box_office: str | None = None
     franchise: str | None = None
     streaming_on: list[str] = []
     audience_sentiment: float | None = None
@@ -91,3 +110,22 @@ class RefreshAnalyticsResponse(BaseModel):
     failed_movies: int
     skipped_reasons: list[str]
     failed_reasons: list[str]
+
+
+class SentimentTimelinePoint(BaseModel):
+    week: date
+    avg_sentiment: float
+    review_count: int
+    positive_pct: int
+    negative_pct: int
+    neutral_pct: int
+
+
+class SentimentTimelineResponse(BaseModel):
+    timeline: list[SentimentTimelinePoint]
+    overall_sentiment: float
+    total_reviews: int
+    sentiment_trend: str
+    positive_pct: int
+    neutral_pct: int
+    negative_pct: int

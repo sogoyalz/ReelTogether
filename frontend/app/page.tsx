@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { ArrowUpRight, Sparkles } from 'lucide-react'
+import { MovieArtwork } from '@/components/shared/MovieArtwork'
 
 import { BuzzRanking } from '@/components/home/BuzzRanking'
 import { HomeSignalOverview } from '@/components/home/HomeSignalOverview'
@@ -6,71 +8,69 @@ import { ReleasedMovies } from '@/components/home/ReleasedMovies'
 import { TrendingMovies } from '@/components/home/TrendingMovies'
 import { UpcomingMovies } from '@/components/home/UpcomingMovies'
 import { SearchBar } from '@/components/shared/SearchBar'
+import { getHomePagePayload } from '@/lib/server-api'
 
-export default function Home() {
+export const dynamic = 'force-dynamic'
+
+export default async function Home() {
+  const homepage = await getHomePagePayload()
+  const featured = homepage?.trending?.[0]
+
   return (
     <main className="page-shell">
-      <section className="hero-panel hero-panel-immersive">
-        <div className="hero-copy-stack">
-          <span className="eyebrow">Movie Pulse Analytics</span>
-          <h1 className="hero-title">A sharper, more cinematic way to browse movie momentum.</h1>
-          <p className="hero-copy">
-            Search titles instantly, move through franchises and genres, compare contenders,
-            and read the audience signal behind every movie in a cleaner editorial interface.
-          </p>
-          <div style={{ marginTop: 24 }}>
-            <SearchBar />
-          </div>
-          <div className="hero-actions" style={{ marginTop: 22 }}>
-            <Link className="cta-button" href="/compare">
-              Compare movies
-            </Link>
-            <Link className="cta-button secondary-button" href="/movies">
-              Browse library
-            </Link>
-            <Link className="cta-button secondary-button" href="/discover">
-              Open discovery
-            </Link>
+      <section className="home-cinema-hero">
+        {featured && <MovieArtwork src={featured.backdrop_url || featured.poster_url} title={featured.title} backdrop />}
+        <div className="home-cinema-copy">
+          <span className="cinema-kicker">MOVIE DISCOVERY, PERSONALIZED</span>
+          <h1>Discover your<br />next favourite film<span>.</span></h1>
+          <p>Explore the catalog, compare films, and get recommendations tailored to your preferences.</p>
+          <div className="hero-actions">
+            <Link className="cta-button" href="/recommendations"><Sparkles size={17} /> Find my next movie</Link>
+            <Link className="cinema-secondary" href="/movies">Explore the library <ArrowUpRight size={17} /></Link>
           </div>
         </div>
+        {featured && <Link className="home-featured-caption" href={`/movies/${featured.slug}`}><span>IN THE SPOTLIGHT</span><strong>{featured.title} <ArrowUpRight size={16} /></strong></Link>}
+      </section>
+      <section className="home-search-strip" aria-label="Find a movie"><div><strong>Have a movie in mind?</strong><p className="meta">Search the catalog and start exploring.</p></div><SearchBar /></section>
 
-        <HomeSignalOverview />
+      <section style={{ marginTop: 24 }}>
+        <HomeSignalOverview dashboard={homepage?.dashboard} />
       </section>
 
       <div className="section-header">
         <div>
           <h2>Trending Movies</h2>
-          <p>Titles getting the strongest current attention signals.</p>
+          <p>Explore titles ranked by the catalog’s attention scores.</p>
         </div>
       </div>
-      <TrendingMovies />
+      <TrendingMovies movies={homepage?.trending} />
 
       <div className="section-header">
         <div>
           <h2>Upcoming Releases</h2>
-          <p>The release calendar with early audience demand built in.</p>
+          <p>Something to look forward to. Explore upcoming releases.</p>
         </div>
         <Link className="eyebrow" href="/upcoming">
           See all upcoming
         </Link>
       </div>
-      <UpcomingMovies />
+      <UpcomingMovies movies={homepage?.upcoming} />
 
       <div className="section-header">
         <div>
           <h2>Released Movies</h2>
-          <p>Older releases with the same detail pages, scores, and trailer metrics.</p>
+          <p>Find a favourite you missed—or revisit one you love.</p>
         </div>
       </div>
-      <ReleasedMovies />
+      <ReleasedMovies movies={homepage?.released} />
 
       <div className="section-header">
         <div>
           <h2>Buzz Score Ranking</h2>
-          <p>A fast leaderboard for movie lovers who want signal over noise.</p>
+          <p>Compare the catalog’s attention scores. Some signals are estimates.</p>
         </div>
       </div>
-      <BuzzRanking />
+      <BuzzRanking dashboard={homepage?.dashboard} />
     </main>
   )
 }

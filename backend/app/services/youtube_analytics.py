@@ -132,6 +132,7 @@ def _refresh_movies(db: Session, movies: list[Movie]) -> RefreshResult:
             analytics.buzz_score = _recalculate_buzz_score(analytics)
             analytics.hype_score = _recalculate_hype_score(analytics)
             analytics.last_updated = now
+            _record_observation(db, analytics)
             _sync_youtube_comments(db, analytics.movie, video_id, comments)
             result.refreshed_movies += 1
 
@@ -144,14 +145,14 @@ def _fetch_video_statistics(video_ids: list[str]) -> dict[str, dict[str, int]]:
     aggregated: dict[str, dict[str, int]] = {}
 
     for batch in batches:
-        query = _build_youtube_query(
-            YOUTUBE_VIDEOS_ENDPOINT,
-            {
-                "part": "statistics",
-                "id": ",".join(batch),
-                "fields": "items(id,statistics(viewCount,likeCount,commentCount))",
-                "key": settings.YOUTUBE_API_KEY,
-            },
+        query = (
+            f"{YOUTUBE_VIDEOS_ENDPOINT}?"
+            f"{urlencode({
+                'part': 'statistics',
+                'id': ','.join(batch),
+                'fields': 'items(id,statistics(viewCount,likeCount,commentCount))',
+                'key': settings.YOUTUBE_API_KEY,
+            })}"
         )
         try:
             with urlopen(query, timeout=10) as response:
@@ -177,16 +178,16 @@ def _fetch_video_statistics(video_ids: list[str]) -> dict[str, dict[str, int]]:
 
 
 def _fetch_video_comments(video_id: str, limit: int = 8) -> list[dict[str, Any]]:
-    query = _build_youtube_query(
-        YOUTUBE_COMMENTS_ENDPOINT,
-        {
-            "part": "snippet",
-            "videoId": video_id,
-            "maxResults": min(limit, 20),
-            "order": "relevance",
-            "textFormat": "plainText",
-            "key": settings.YOUTUBE_API_KEY,
-        },
+    query = (
+        f"{YOUTUBE_COMMENTS_ENDPOINT}?"
+        f"{urlencode({
+            'part': 'snippet',
+            'videoId': video_id,
+            'maxResults': min(limit, 20),
+            'order': 'relevance',
+            'textFormat': 'plainText',
+            'key': settings.YOUTUBE_API_KEY,
+        })}"
     )
     try:
         with urlopen(query, timeout=10) as response:
@@ -217,7 +218,7 @@ def _fetch_video_comments(video_id: str, limit: int = 8) -> list[dict[str, Any]]
 
 def _sync_youtube_comments(db: Session, movie: Movie, video_id: str, comments: list[dict[str, Any]]) -> None:
     for index, comment in enumerate(comments, start=1):
-        external_id = f"youtube-{video_id}-{comment['id']}"
+        external_id = f"youtube-{movie.id}-{video_id}-{comment['id']}"
         existing = next((item for item in movie.discussions if item.external_id == external_id), None)
         body = comment["text"]
         title = f"YouTube viewer reaction #{index}"
@@ -240,6 +241,7 @@ def _sync_youtube_comments(db: Session, movie: Movie, video_id: str, comments: l
                     engagement_score=float(comment["like_count"]),
                     url=comment["url"],
                     raw_payload=payload,
+                    created_at=datetime.fromisoformat(comment["published_at"].replace("Z", "+00:00")).replace(tzinfo=None) if comment.get("published_at") else datetime.utcnow(),
                 )
             )
             continue
@@ -307,5 +309,20 @@ def _score_comment_sentiment(text: str) -> str:
     return "neutral"
 
 
-def _build_youtube_query(endpoint: str, params: dict[str, Any]) -> str:
-    return f"{endpoint}?{urlencode(params)}"
+def _record_observation(db: Session, analytics: MovieAnalytics) -> None:
+    observed = analytics.last_updated
+    analytics.snapshot_date = observed.date()
+    movie = analytics.movie
+    movie.provider_metadata = {
+        **(movie.provider_metadata or {}),
+        "youtube_observation": {"verified_at": observed.isoformat(), "source_url": analytics.trailer_url},
+    }
+    label = f"observed-{observed.date().isoformat()}"
+    snapshot = next((a for a in movie.analytics_snapshots if a.snapshot_label == label), None)
+    if snapshot is None:
+        snapshot = MovieAnalytics(snapshot_label=label)
+        movie.analytics_snapshots.append(snapshot)
+        db.add(snapshot)
+    for column in MovieAnalytics.__table__.columns:
+        if column.name not in {"id", "movie_id", "snapshot_label"}:
+            setattr(snapshot, column.name, getattr(analytics, column.name))

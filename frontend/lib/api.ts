@@ -31,6 +31,10 @@ export interface MovieSummary {
   runtime: string | null
   rotten_tomatoes: string | null
   logo_url: string | null
+  data_quality: string
+  field_sources: Record<string, string>
+  last_verified_at: string | null
+  warnings: string[]
 }
 
 export interface MovieDetail extends MovieSummary {
@@ -41,6 +45,11 @@ export interface MovieDetail extends MovieSummary {
   sentiment_score: number
   predicted_opening_weekend_usd: number
   predicted_domestic_total_usd: number
+  forecast_is_public: boolean
+  forecast_status: string
+  forecast_note: string
+  engagement_metrics_are_estimated: boolean
+  engagement_metrics_note: string
   imdb_id: string | null
   box_office: string | null
   awards: string | null
@@ -70,6 +79,7 @@ export interface CatalogFacets {
   genres: string[]
   franchises: string[]
   studios: string[]
+  directors: string[]
   streaming: string[]
   statuses: string[]
   years: number[]
@@ -105,6 +115,15 @@ export interface MovieAnalytics {
   hype_score: number
   predicted_opening_weekend_usd: number
   predicted_domestic_total_usd: number
+  forecast_is_public: boolean
+  forecast_status: string
+  forecast_note: string
+  engagement_metrics_are_estimated: boolean
+  engagement_metrics_note: string
+  data_quality: string
+  field_sources: Record<string, string>
+  last_verified_at: string | null
+  warnings: string[]
   trailer_url: string | null
   updated_at: string
   score_breakdown: {
@@ -132,6 +151,25 @@ export interface AnalyticsHistoryResponse {
   points: AnalyticsHistoryPoint[]
 }
 
+export interface SentimentTimelinePoint {
+  week: string
+  avg_sentiment: number
+  review_count: number
+  positive_pct: number
+  negative_pct: number
+  neutral_pct: number
+}
+
+export interface SentimentTimelineResponse {
+  timeline: SentimentTimelinePoint[]
+  overall_sentiment: number
+  total_reviews: number
+  sentiment_trend: string
+  positive_pct: number
+  neutral_pct: number
+  negative_pct: number
+}
+
 export interface ComparisonItem {
   movie_id: number
   slug: string
@@ -146,10 +184,20 @@ export interface ComparisonItem {
   sentiment_score: number
   predicted_opening_weekend_usd: number
   predicted_domestic_total_usd: number
+  forecast_is_public: boolean
+  forecast_status: string
+  forecast_note: string
+  engagement_metrics_are_estimated: boolean
+  engagement_metrics_note: string
+  data_quality: string
+  field_sources: Record<string, string>
+  last_verified_at: string | null
+  warnings: string[]
   tmdb_popularity: number
   imdb_rating: string | null
   rotten_tomatoes: string | null
   runtime: string | null
+  box_office: string | null
   franchise: string | null
   streaming_on: string[]
   audience_sentiment: number | null
@@ -179,6 +227,9 @@ export interface MovieAIOverview {
     domestic_total_low_usd: number
     domestic_total_high_usd: number
     methodology: string
+    forecast_is_public: boolean
+    forecast_status: string
+    forecast_note: string
     feature_version: string
     model_version: string
     feature_importance: {

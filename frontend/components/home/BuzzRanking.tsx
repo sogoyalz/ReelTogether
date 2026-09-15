@@ -3,14 +3,15 @@
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 
-import { movieApi } from '@/lib/api'
+import { movieApi, type DashboardResponse } from '@/lib/api'
 import { formatCompactNumber, formatReleaseDate } from '@/lib/formatters'
 import { ErrorState, LoadingState } from '@/components/shared/QueryState'
 
-export function BuzzRanking() {
+export function BuzzRanking({ dashboard: initialDashboard }: { dashboard?: DashboardResponse }) {
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: movieApi.getDashboard,
+    initialData: initialDashboard,
   })
 
   if (isLoading) {

@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -31,23 +32,26 @@ class JobRegistry:
         self._order: deque[str] = deque()
         self._max_jobs = max_jobs
         self._lock = threading.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="movie-job")
 
     def enqueue(self, name: str, fn: Callable[..., dict[str, Any] | None], *args, **kwargs) -> JobRecord:
-        job = JobRecord(id=str(uuid.uuid4()), name=name)
         with self._lock:
+            for existing in self._jobs.values():
+                if existing.name == name and existing.status in {"queued", "running"}:
+                    return existing
+            active = sum(job.status in {"queued", "running"} for job in self._jobs.values())
+            if active >= self._max_jobs:
+                raise RuntimeError("Background queue is full")
+            while len(self._order) >= self._max_jobs:
+                finished = next((key for key in self._order if self._jobs[key].status not in {"queued", "running"}), None)
+                if finished is None:
+                    break
+                self._order.remove(finished)
+                del self._jobs[finished]
+            job = JobRecord(id=str(uuid.uuid4()), name=name)
             self._jobs[job.id] = job
             self._order.append(job.id)
-            while len(self._order) > self._max_jobs:
-                oldest_id = self._order.popleft()
-                self._jobs.pop(oldest_id, None)
-
-        thread = threading.Thread(
-            target=self._run_job,
-            args=(job.id, fn, args, kwargs),
-            daemon=True,
-            name=f"job-{name}",
-        )
-        thread.start()
+        self._executor.submit(self._run_job, job.id, fn, args, kwargs)
         return job
 
     def _run_job(

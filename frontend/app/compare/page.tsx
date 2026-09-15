@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
@@ -23,8 +23,7 @@ export default function ComparePage() {
 function CompareWorkspace() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const initialIds = parseSelectedIds(searchParams.get('ids'))
-  const [selectedIds, setSelectedIds] = useState<number[]>(initialIds)
+  const selectedIds = parseSelectedIds(searchParams.get('ids'))
   const [pickerQuery, setPickerQuery] = useState('')
   const [pickerPage, setPickerPage] = useState(1)
 
@@ -50,33 +49,13 @@ function CompareWorkspace() {
     return moviesQuery.data?.items || []
   }, [moviesQuery.data])
 
-  useEffect(() => {
-    if (selectedIds.length >= 2 || !moviesQuery.data?.items.length) {
-      return
-    }
-    setSelectedIds(moviesQuery.data.items.slice(0, 2).map((movie) => movie.id))
-  }, [moviesQuery.data, selectedIds.length])
-
-  useEffect(() => {
-    if (selectedIds.length < 2) {
-      return
-    }
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('ids', selectedIds.join(','))
-    router.replace(`/compare?${params.toString()}`)
-  }, [router, searchParams, selectedIds])
-
-  useEffect(() => {
-    setPickerPage(1)
-  }, [pickerQuery])
-
   function toggleId(movieId: number) {
-    setSelectedIds((current) => {
-      if (current.includes(movieId)) {
-        return current.length > 2 ? current.filter((id) => id !== movieId) : current
-      }
-      return [...current, movieId].slice(0, 4)
-    })
+    const next = selectedIds.includes(movieId)
+      ? selectedIds.filter(id => id !== movieId)
+      : [...selectedIds, movieId].slice(0, 4)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('ids', next.join(','))
+    router.replace(`/compare?${params.toString()}`, { scroll: false })
   }
 
   return (
@@ -99,7 +78,7 @@ function CompareWorkspace() {
         <div style={{ marginTop: 22 }}>
           <input
             className="search-input"
-            onChange={(event) => setPickerQuery(event.target.value)}
+            onChange={(event) => { setPickerQuery(event.target.value); setPickerPage(1) }}
             placeholder="Filter compare picker by title, franchise, or studio"
             value={pickerQuery}
           />
@@ -159,9 +138,9 @@ function parseSelectedIds(raw: string | null) {
     return []
   }
 
-  return raw
+  return [...new Set(raw
     .split(',')
     .map((value) => Number(value.trim()))
-    .filter((value) => Number.isInteger(value) && value > 0)
+    .filter((value) => Number.isInteger(value) && value > 0))]
     .slice(0, 4)
 }

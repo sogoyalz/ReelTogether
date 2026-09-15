@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { MovieCard } from '@/components/shared/MovieCard'
 import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
@@ -17,15 +17,20 @@ export function SearchResults() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [franchiseFilter, setFranchiseFilter] = useState('all')
   const [studioFilter, setStudioFilter] = useState('all')
+  const [directorFilter, setDirectorFilter] = useState('all')
   const [yearFilter, setYearFilter] = useState('')
   const [minimumRating, setMinimumRating] = useState(0)
-  const [minimumHype, setMinimumHype] = useState(0)
-  const [minimumPopularity, setMinimumPopularity] = useState(0)
   const [sortBy, setSortBy] = useState('hype')
   const [page, setPage] = useState(1)
+  const filterKey = JSON.stringify([query, statusFilter, genreFilter, franchiseFilter, studioFilter, directorFilter, yearFilter, minimumRating, sortBy])
+  const [previousFilters, setPreviousFilters] = useState(filterKey)
+  if (previousFilters !== filterKey) {
+    setPreviousFilters(filterKey)
+    setPage(1)
+  }
 
   const resultsQuery = useQuery({
-    queryKey: ['search', query, statusFilter, genreFilter, franchiseFilter, studioFilter, yearFilter, minimumRating, minimumHype, minimumPopularity, sortBy, page],
+    queryKey: ['search', query, statusFilter, genreFilter, franchiseFilter, studioFilter, directorFilter, yearFilter, minimumRating, sortBy, page],
     queryFn: () =>
       movieApi.searchMovies({
         q: query,
@@ -33,10 +38,9 @@ export function SearchResults() {
         genre: genreFilter !== 'all' ? genreFilter : undefined,
         franchise: franchiseFilter !== 'all' ? franchiseFilter : undefined,
         studio: studioFilter !== 'all' ? studioFilter : undefined,
+        director: directorFilter !== 'all' ? directorFilter : undefined,
         year: yearFilter ? Number(yearFilter) : undefined,
         min_rating: minimumRating || undefined,
-        min_hype: minimumHype || undefined,
-        min_popularity: minimumPopularity || undefined,
         sort: sortBy,
         page,
         page_size: 24,
@@ -44,16 +48,15 @@ export function SearchResults() {
     enabled: query.trim().length > 0,
   })
 
-  useEffect(() => {
-    setPage(1)
-  }, [query, statusFilter, genreFilter, franchiseFilter, studioFilter, yearFilter, minimumRating, minimumHype, minimumPopularity, sortBy])
+
 
   const response = resultsQuery.data
-  const results = response?.items || []
+  const results = useMemo(() => response?.items || [], [response?.items])
   const genres = response?.facets.genres || []
   const statuses = response?.facets.statuses || []
   const franchises = response?.facets.franchises || []
   const studios = response?.facets.studios || []
+  const directors = response?.facets.directors || []
   const years = response?.facets.years || []
   const researchSnapshot = useMemo(() => {
     if (!results.length) {
@@ -105,10 +108,9 @@ export function SearchResults() {
               setGenreFilter('all')
               setFranchiseFilter('all')
               setStudioFilter('all')
+              setDirectorFilter('all')
               setYearFilter('')
               setMinimumRating(0)
-              setMinimumHype(0)
-              setMinimumPopularity(0)
               setSortBy('hype')
               setPage(1)
             }}
@@ -149,6 +151,13 @@ export function SearchResults() {
           </select>
         </label>
         <label>
+          <span className="metric-label">Director</span>
+          <select className="compare-select" onChange={(event) => setDirectorFilter(event.target.value)} value={directorFilter}>
+            <option value="all">All</option>
+            {directors.map((director) => <option key={director} value={director}>{director}</option>)}
+          </select>
+        </label>
+        <label>
           <span className="metric-label">Year</span>
           <select className="compare-select" onChange={(event) => setYearFilter(event.target.value)} value={yearFilter}>
             <option value="">All</option>
@@ -160,17 +169,10 @@ export function SearchResults() {
           <input className="search-input" min={0} max={10} onChange={(event) => setMinimumRating(Number(event.target.value || 0))} step="0.1" type="number" value={minimumRating} />
         </label>
         <label>
-          <span className="metric-label">Min Hype</span>
-          <input className="search-input" min={0} max={100} onChange={(event) => setMinimumHype(Number(event.target.value || 0))} type="number" value={minimumHype} />
-        </label>
-        <label>
-          <span className="metric-label">Min Popularity</span>
-          <input className="search-input" min={0} max={100} onChange={(event) => setMinimumPopularity(Number(event.target.value || 0))} type="number" value={minimumPopularity} />
-        </label>
-        <label>
           <span className="metric-label">Sort</span>
           <select className="compare-select" onChange={(event) => setSortBy(event.target.value)} value={sortBy}>
             <option value="hype">Hype score</option>
+            <option value="none">None</option>
             <option value="buzz">Buzz score</option>
             <option value="popularity">Popularity</option>
             <option value="rating">IMDb rating</option>
@@ -182,10 +184,10 @@ export function SearchResults() {
 
       <div className="section-header">
         <div>
-          <h2>Results for "{query}"</h2>
+          <h2>Results for &quot;{query}&quot;</h2>
           <p>{response?.total || 0} matches in the tracked catalog.</p>
         </div>
-        {response ? <p className="meta">Sorted by {sortBy}. Showing {results.length} results on this page.</p> : null}
+        {response ? <p className="meta">{sortBy === 'none' ? `No manual sort applied. Showing ${results.length} results on this page.` : `Sorted by ${sortBy}. Showing ${results.length} results on this page.`}</p> : null}
       </div>
       {researchSnapshot ? (
         <div className="overview-grid" style={{ marginBottom: 20 }}>

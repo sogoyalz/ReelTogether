@@ -7,15 +7,16 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from app.core.config import settings
+from app.services.cache import ExpiringMap
 from app.models.movie import Movie
 
 OMDB_API_ENDPOINT = "https://www.omdbapi.com/"
-_CACHE: dict[tuple[str, int], dict[str, str | None] | None] = {}
+_CACHE = ExpiringMap()
 
 
 def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
     if not settings.omdb_api_configured:
-        return None
+        return movie.provider_metadata or None
 
     cache_key = (movie.title, movie.release_date.year)
     if cache_key in _CACHE:
@@ -31,9 +32,10 @@ def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
     }
 
     try:
-        with urlopen(f"{OMDB_API_ENDPOINT}?{urlencode(params)}", timeout=10) as response:
+        with urlopen(f"{OMDB_API_ENDPOINT}?{urlencode(params)}", timeout=4) as response:
+
             payload = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError):
+    except (HTTPError, URLError, TimeoutError, ValueError):
         _CACHE[cache_key] = None
         return None
 
@@ -46,6 +48,7 @@ def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
         "imdb_id": _normalize_str(payload.get("imdbID")),
         "rated": _normalize_str(payload.get("Rated")),
         "runtime": _normalize_str(payload.get("Runtime")),
+        "language": _normalize_str(payload.get("Language")),
         "box_office": _normalize_str(payload.get("BoxOffice")),
         "awards": _normalize_str(payload.get("Awards")),
         "metascore": _normalize_str(payload.get("Metascore")),

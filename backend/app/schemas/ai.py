@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DiscussionItem(BaseModel):
@@ -24,28 +24,24 @@ class MovieSentimentSnapshotResponse(BaseModel):
     model_version: str
 
 
-class PredictionFeatureImportanceResponse(BaseModel):
-    label: str
-    value: float
-    impact_score: float
-    direction: str
-    explanation: str
-
-
 class MoviePredictionSnapshotResponse(BaseModel):
     movie_id: int
     snapshot_at: datetime
     predicted_opening_weekend_usd: float
     predicted_domestic_total_usd: float
     confidence_score: float
-    opening_weekend_low_usd: float
-    opening_weekend_high_usd: float
-    domestic_total_low_usd: float
-    domestic_total_high_usd: float
-    methodology: str
     feature_version: str
     model_version: str
-    feature_importance: list["PredictionFeatureImportanceResponse"]
+
+    opening_weekend_low_usd: float = 0
+    opening_weekend_high_usd: float = 0
+    domestic_total_low_usd: float = 0
+    domestic_total_high_usd: float = 0
+    forecast_is_public: bool = False
+    forecast_status: str = "unavailable"
+    forecast_note: str = ""
+    methodology: str = ""
+    feature_importance: list[dict] = Field(default_factory=list)
 
 
 class MovieSummarySnapshotResponse(BaseModel):
@@ -74,37 +70,10 @@ class PublicOpinionResponse(BaseModel):
     highlighted_quotes: list[str]
 
 
-class ReviewPerspectiveResponse(BaseModel):
-    label: str
-    item_count: int
-    sentiment_score: float
-    summary: str
-    top_themes: list[str]
-    positive_drivers: list[str]
-    negative_drivers: list[str]
-    highlighted_quotes: list[str]
-
-
-class ThemeSignalResponse(BaseModel):
-    theme: str
-    critic_weight: float
-    audience_weight: float
-    gap: float
-
-
-class CriticAudienceComparisonResponse(BaseModel):
-    critics: ReviewPerspectiveResponse
-    audience: ReviewPerspectiveResponse
-    consensus_themes: list[str]
-    divergence_themes: list[str]
-    alignment_score: float
-    theme_signals: list[ThemeSignalResponse]
-
-
 class MovieAIOverviewResponse(BaseModel):
     sentiment: MovieSentimentSnapshotResponse
     prediction: MoviePredictionSnapshotResponse
     summary: MovieSummarySnapshotResponse
     public_opinion: PublicOpinionResponse
-    critic_vs_audience: CriticAudienceComparisonResponse
     discussions: list[DiscussionItem]
+    critic_vs_audience: dict

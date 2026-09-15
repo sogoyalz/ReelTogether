@@ -1,5 +1,7 @@
 'use client'
 
+import { useParams } from 'next/navigation'
+
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 
@@ -15,7 +17,8 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryS
 import { movieApi } from '@/lib/api'
 import { formatCompactNumber, formatCurrency } from '@/lib/formatters'
 
-export default function MoviePage({ params }: { params: { slug: string } }) {
+export default function MoviePage() {
+  const params = useParams<{ slug: string }>()
   const movieQuery = useQuery({
     queryKey: ['movie', params.slug],
     queryFn: () => movieApi.getMovieBySlug(params.slug),
@@ -119,7 +122,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
             <div className="panel">
               <div className="section-header" style={{ marginTop: 0 }}>
                 <div>
-                  <h3>AI Snapshot</h3>
+                  <h3>Movie insights</h3>
                   <p>Stored sentiment, prediction confidence, and summary outputs generated from the current movie data.</p>
                 </div>
               </div>
@@ -131,22 +134,22 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
                 </div>
                 <div className="metric-card">
                   <div className="metric-label">Prediction Confidence</div>
-                  <div className="metric-value overview-title">{Math.round(ai.prediction.confidence_score * 100)}%</div>
+                  <div className="metric-value overview-title">Unvalidated</div>
                   <p className="meta">{ai.prediction.model_version}</p>
                 </div>
                 <div className="metric-card">
                   <div className="metric-label">Opening Forecast</div>
-                  <div className="metric-value overview-title">{formatCurrency(ai.prediction.predicted_opening_weekend_usd)}</div>
-                  <p className="meta">Domestic total {formatCurrency(ai.prediction.predicted_domestic_total_usd)}</p>
+                  <div className="metric-value overview-title">{ai.prediction.forecast_status === 'modeled' ? formatCurrency(ai.prediction.predicted_opening_weekend_usd) : 'Unavailable'}</div>
+                  <p className="meta">{ai.prediction.forecast_note}</p>
                 </div>
               </div>
             </div>
           ) : aiQuery.isLoading ? (
-            <LoadingState title="Loading AI snapshot" description="Pulling generated sentiment, forecasts, and summaries." />
+            <LoadingState title="Loading movie insights" description="Pulling generated sentiment, forecasts, and summaries." />
           ) : (
             <SectionNotice
-              description="The movie record loaded, but the AI summary layer has not been generated for this title yet."
-              title="AI research layer unavailable"
+              description="The movie record loaded, but the summary layer has not been generated for this title yet."
+              title="Movie insights unavailable"
             />
           )}
           {analytics ? (
@@ -274,7 +277,7 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
                 <div className="section-header" style={{ marginTop: 0 }}>
                   <div>
                     <h3>Audience Summary</h3>
-                    <p>Stored AI summary blocks and discussion themes for this title.</p>
+                    <p>Stored summary blocks and discussion themes for this title.</p>
                   </div>
                 </div>
                 <div className="stack">
@@ -544,9 +547,9 @@ export default function MoviePage({ params }: { params: { slug: string } }) {
               <div className="stack">
                 <div className="metric-card">
                   <div className="metric-label">Current Forecast</div>
-                  <div className="metric-value overview-title">{formatCurrency(ai.prediction.predicted_opening_weekend_usd)}</div>
+                  <div className="metric-value overview-title">{ai.prediction.forecast_status === 'modeled' ? formatCurrency(ai.prediction.predicted_opening_weekend_usd) : 'Unavailable'}</div>
                   <p className="meta">
-                    Domestic total forecast {formatCurrency(ai.prediction.predicted_domestic_total_usd)} with {Math.round(ai.prediction.confidence_score * 100)}% confidence.
+                    Domestic total forecast {formatCurrency(ai.prediction.predicted_domestic_total_usd)}. Experimental estimate; accuracy has not been validated.
                   </p>
                 </div>
                 {predictionFactors.length ? (

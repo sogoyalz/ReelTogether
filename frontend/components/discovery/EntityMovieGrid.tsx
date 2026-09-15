@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
+import { Pagination } from '@/components/shared/Pagination'
 import { useQuery } from '@tanstack/react-query'
 
 import { MovieCard } from '@/components/shared/MovieCard'
@@ -18,9 +20,10 @@ export function EntityMovieGrid({
   description: string
   browseParams: Record<string, string | number | undefined>
 }) {
+  const [page, setPage] = useState(1)
   const catalogQuery = useQuery({
-    queryKey: ['entity-grid', title, JSON.stringify(browseParams)],
-    queryFn: () => movieApi.browseCatalog({ ...browseParams, page_size: 48, sort: 'hype' }),
+    queryKey: ['entity-grid', title, JSON.stringify(browseParams), page],
+    queryFn: () => movieApi.browseCatalog({ ...browseParams, page, page_size: 48, sort: 'hype' }),
   })
 
   const items = catalogQuery.data?.items || []
@@ -54,6 +57,7 @@ export function EntityMovieGrid({
         <EmptyState title="No matching titles" description="No movies in the current catalog matched this entity page yet." />
       ) : null}
       {!catalogQuery.isLoading && !catalogQuery.isError && items.length ? <div className="section-grid">{items.map((movie) => <MovieCard key={movie.id} movie={movie} />)}</div> : null}
+      <Pagination page={catalogQuery.data?.page || page} totalPages={catalogQuery.data?.total_pages || 1} onChange={setPage} />
     </main>
   )
 }

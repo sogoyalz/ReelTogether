@@ -10,7 +10,7 @@ export function HypeGauge({ analytics }: { analytics: MovieAnalytics }) {
       <div className="section-header" style={{ marginTop: 0 }}>
         <div>
           <h3>Hype Score</h3>
-          <p>Weighted from trailer interaction, search volume, social buzz, sentiment, and timing.</p>
+          <p>Weighted from estimated trailer interaction, estimated search demand, social buzz, sentiment, and timing.</p>
         </div>
       </div>
       <div className="metrics-grid">

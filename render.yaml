@@ -1,12 +1,18 @@
 services:
   - type: web
-    name: movie-pulse-backend
+    name: reeltogether-backend
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health/ready
+    disk:
+      name: movie-data
+      mountPath: /data
+      sizeGB: 1
     autoDeploy: true
     envVars:
+      - key: PROXY_SHARED_SECRET
+        sync: false
       - key: ENVIRONMENT
         value: production
       - key: ENABLE_DOCS
@@ -20,7 +26,7 @@ services:
       - key: REDIS_URL
         sync: false
       - key: DATABASE_URL
-        sync: false
+        value: sqlite:////data/movie_analytics.db
       - key: TMDB_API_KEY
         sync: false
       - key: YOUTUBE_API_KEY
@@ -37,11 +43,13 @@ services:
         sync: false
 
   - type: web
-    name: movie-pulse-frontend
+    name: reeltogether-frontend
     runtime: docker
     rootDir: frontend
     dockerfilePath: ./Dockerfile
     autoDeploy: true
     envVars:
+      - key: PROXY_SHARED_SECRET
+        sync: false
       - key: API_BASE_URL
         sync: false
