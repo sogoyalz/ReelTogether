@@ -80,7 +80,7 @@ The backend applies migrations before Uvicorn starts. Compose stores SQLite in t
 
 `render.yaml` describes an alternative single-instance deployment with a persistent backend disk. Configure both services' identical proxy secret, allowed hosts/origins, admin key, provider keys, and the frontend API base URL. The images, local container startup, frontend proxy, persistence across restart, and restoration of a 1,369-movie database have been verified locally. Render account deployment remains pending. The backend requires persistent storage; ephemeral free-tier storage is unsuitable for this SQLite configuration.
 
-The current design is for a **single backend instance**. Jobs are bounded but in-process and do not survive restarts. Before scaling horizontally, use a durable queue, coordinated scheduling, a supported shared database deployment, and off-host backup retention/restore procedures. `/health/live` checks process availability; `/health/ready` checks the database independently of optional provider refreshes.
+The current design is for a **single backend instance**. Maintenance jobs persist in the database with retry limits and expiring worker leases. Before scaling horizontally, use a durable queue, coordinated scheduling, a supported shared database deployment, and off-host backup retention/restore procedures. `/health/live` checks process availability; `/health/ready` checks the database independently of optional provider refreshes.
 
 ## Forecast experiments
 
@@ -127,3 +127,5 @@ Open **Movie Night** to create a room for 2–8 signed-in friends. Share the inv
 See [Movie Night design and verification](docs/MOVIE_NIGHT.md) for privacy rules, ranking, concurrency checks and limitations.
 
 Operational setup and recovery: [operations guide](docs/OPERATIONS.md). Offsite storage and alert delivery require deployment-specific configuration.
+
+Free portfolio hosting: [setup and launch checks](docs/FREE_HOSTING.md). Account connection and public deployment verification are still required.

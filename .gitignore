@@ -31,3 +31,13 @@ frontend/playwright-report/
 /review-evidence/
 /frontend/AGENTS.md
 /frontend/CLAUDE.md
+node_modules/
+
+# Local Neon tooling and credentials
+/node_modules/
+/.agents/
+/.codex/
+/skills-lock.json
+/.neon
+/.env.local
+/.env.neon

@@ -1,0 +1,47 @@
+# Free API + external persistent PostgreSQL. Frontend deploys separately on Vercel Hobby.
+services:
+  - type: web
+    name: reeltogether-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: PROXY_SHARED_SECRET
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_API_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: TRUSTED_HOSTS
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: AUTO_CREATE_TABLES
+        value: "false"
+      - key: ENABLE_DOCS
+        value: "false"
+      - key: ENABLE_RATE_LIMIT
+        value: "true"
+      - key: ENABLE_STARTUP_SYNC
+        value: "true"
+      - key: STARTUP_SYNC_ASYNC
+        value: "false"
+      - key: ENABLE_JOB_WORKER
+        value: "false"
+      - key: ENABLE_PERIODIC_SYNC
+        value: "false"
+      - key: ENABLE_RAG
+        value: "false"
+      - key: ENABLE_USER_FEATURES
+        value: "false"
+      - key: ENABLE_ASSISTANT_AI
+        value: "false"
+      - key: REDIS_URL
+        value: ""
