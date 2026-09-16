@@ -197,3 +197,97 @@ input[type='checkbox'] { accent-color:var(--accent); }
 .night-votes button[aria-pressed=true] { background:var(--accent); color:#21150e; border-color:var(--accent); }
 .night-stage-action { padding:24px 0; border-top:1px solid var(--border); }
 @media(max-width:720px){.night-heading{display:block}.night-steps{font-size:12px;gap:12px;margin-top:24px}.night-start{grid-template-columns:1fr}.night-room-head{display:block}.night-films{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 12px}.night-page .panel{padding:19px}.night-votes{flex-wrap:wrap}.night-votes button{font-size:11px}.night-votes svg{display:none}.night-favorite-search input{width:100%}}
+
+/* Film-first layouts and a quieter shared visual hierarchy. */
+:root { --bg:#101112; --surface:#191b1d; --border:#303235; --text:#f5f2eb; --muted:#b1b0ab; --accent:#eeb988; --ink:#eeb988; }
+body { line-height:1.5; }
+.site-header { background:#101112ed; backdrop-filter:blur(18px); }
+.site-header-inner { min-height:84px; box-shadow:none; }
+.brand-symbol { border-radius:12px; background:var(--accent); }
+.site-nav { gap:16px; }
+.nav-link { font-size:13px; min-height:44px; display:inline-flex; align-items:center; }
+.nav-link-active,.nav-link-active[href='/recommendations'] { box-shadow:none; color:var(--accent); }
+.nav-link-active::after { content:''; width:4px; height:4px; border-radius:50%; background:var(--accent); margin-left:7px; }
+.nav-link[href='/watchlist'] { border-radius:8px; margin-left:8px; }
+.home-cinema-hero { min-height:520px; padding:clamp(28px,5vw,68px); border-radius:18px; }
+.home-cinema-copy { max-width:660px; }
+.home-cinema-copy h1 { font-size:clamp(42px,5.9vw,78px); font-weight:550; letter-spacing:-.055em; margin:24px 0; }
+.home-cinema-copy p { font-size:16px; max-width:395px; line-height:1.75; }
+.home-cinema-hero::after { background:linear-gradient(90deg,#101112f2,#101112c9 42%,#10111222),linear-gradient(0deg,#101112a6,transparent 75%); }
+.cinema-kicker { color:var(--accent); font-size:10px; font-weight:650; letter-spacing:.16em; }
+.cta-button { padding:13px 19px; border-radius:9px; font-size:13px; }
+.cta-button.secondary-button:hover { background:#ffffff0a; border-color:var(--accent); }
+.hero-actions { gap:12px; }
+.home-search-strip { padding:28px 0; }
+.together-feature { display:flex; align-items:center; gap:24px; padding:30px 32px; margin:32px 0 50px; border:1px solid var(--border); border-radius:14px; background:linear-gradient(110deg,#23201d,#191b1d 65%); }
+.together-icon { display:grid; place-items:center; width:54px; height:54px; flex-shrink:0; border:1px solid #65503d; border-radius:50%; color:var(--accent); }
+.together-feature h2 { margin:7px 0; font-size:25px; font-weight:550; }
+.together-feature p { margin:0; color:var(--muted); font-size:13px; }
+.together-feature > .cta-button { margin-left:auto; flex-shrink:0; }
+.section-header { margin-top:48px; margin-bottom:22px; }
+.section-header h2 { font-size:28px; font-weight:550; }
+.section-grid { gap:30px 22px; }
+.film-card-image { border-radius:12px; box-shadow:none; border:1px solid #ffffff08; }
+.film-card .movie-card-body { padding:15px 1px 0; }
+.film-card h3 { font-size:17px; font-weight:550; margin-top:8px; }
+.film-card .meta,.film-card-meta { font-size:12px; }
+.film-card-open { bottom:10px; left:10px; right:10px; border:1px solid #ffffff20; backdrop-filter:blur(12px); }
+.cinema-details { border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin:48px 0 12px; padding:0 0 2px; }
+.cinema-details > summary { cursor:pointer; padding:24px 4px; font-size:18px; color:var(--text); }
+.cinema-details > summary span { display:inline-block; font-size:12px; color:var(--muted); margin-left:18px; }
+.cinema-details[open] { padding-bottom:26px; }
+.cinema-detail-hero { position:relative; isolation:isolate; display:grid; grid-template-columns:210px minmax(0,1fr); gap:42px; align-items:center; padding:56px 44px; margin-top:24px; border-radius:18px; overflow:hidden; min-height:490px; background:#1b1d1e; }
+.cinema-detail-hero::before { content:''; position:absolute; inset:0; z-index:-1; background:linear-gradient(90deg,#111213ed,#111213d9 60%,#11121391),linear-gradient(0deg,#111213d9,transparent); }
+.cinema-detail-poster { border:1px solid #ffffff22; border-radius:12px; overflow:hidden; box-shadow:0 18px 45px #0006; }
+.cinema-detail-copy { max-width:720px; }
+.cinema-detail-copy h1 { font-size:clamp(32px,4.5vw,60px); font-weight:550; letter-spacing:-.055em; margin:16px 0; line-height:1.08; text-wrap:balance; }
+.cinema-detail-meta { color:#cfccc5; font-size:13px; }
+.cinema-genre-links { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.cinema-genre-links a { padding:5px 10px; border:1px solid #ffffff24; border-radius:6px; font-size:11px; color:#e0dcd5; }
+.cinema-genre-links a:hover { border-color:var(--accent); }
+.cinema-rating { display:inline-flex; align-items:center; gap:5px; color:var(--accent); margin-left:5px; font-size:13px; }
+.cinema-rating small { color:var(--muted); }
+.cinema-synopsis { font-size:15px; line-height:1.8; color:#d6d2cb; max-width:650px; margin:23px 0; }
+.cinema-detail-actions { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+.cinema-detail-actions > div { margin-top:0 !important; }
+.cinema-collection-link { display:inline-flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; margin-top:25px; }
+.cinema-collection-link:hover { color:var(--accent); }
+.cinema-film-facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px; padding:34px 4px; border-bottom:1px solid var(--border); }
+.cinema-film-facts > div > span { color:var(--muted); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+.cinema-film-facts p { font-size:14px; line-height:1.7; margin:10px 0 0; }
+.cinema-film-facts a:hover { color:var(--accent); }
+.cinema-film-facts small { color:var(--muted); font-size:11px; }
+.cinema-trailer { max-width:900px; margin:0 auto; }
+.cinema-trailer .video-shell { border-radius:14px; }
+.footer-links { flex-wrap:wrap; gap:18px; }
+@keyframes film-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+.home-cinema-copy,.cinema-detail-copy { animation:film-enter .45s ease-out both; }
+@media (min-width:721px) and (max-width:1050px) { .site-nav { gap:3px; } .together-feature { flex-wrap:wrap; } .together-feature > .cta-button { margin-left:78px; } .cinema-detail-hero { padding:32px; gap:28px; grid-template-columns:165px minmax(0,1fr); } }
+@media (max-width:720px) {
+ .site-header-inner { min-height:72px; }
+ .site-nav-open { gap:8px; padding:14px; border-radius:12px; margin-bottom:12px; }
+ .site-nav-open .nav-link { width:calc(50% - 4px); margin:0; padding:12px; border:1px solid var(--border); border-radius:8px; }
+ .home-cinema-hero { min-height:470px; padding:30px 24px 85px; }
+ .home-cinema-copy h1 { font-size:clamp(38px,9vw,58px); }
+ .home-cinema-copy p { font-size:14px; }
+ .home-featured-caption { left:24px; right:auto; bottom:22px; text-align:left; }
+ .home-featured-caption strong { justify-content:start; font-size:13px; }
+ .home-search-strip { gap:14px; align-items:stretch; }
+ .together-feature { display:block; padding:24px; margin:24px 0 36px; }
+ .together-icon { margin-bottom:18px; width:44px; height:44px; }
+ .together-feature h2 { font-size:24px; }
+ .together-feature > .cta-button { margin:20px 0 0; }
+ .section-header h2 { font-size:24px; }
+ .section-grid { gap:26px 14px; }
+ .film-card h3 { font-size:15px; }
+ .film-card-meta { font-size:10px; }
+ .cinema-detail-hero { display:block; padding:28px 22px; margin-top:20px; }
+ .cinema-detail-poster { width:118px; margin-bottom:26px; }
+ .cinema-detail-copy h1 { font-size:38px; }
+ .cinema-synopsis { font-size:14px; }
+ .cinema-detail-actions { align-items:stretch; flex-direction:column; }
+ .cinema-detail-actions .cta-button { width:100%; }
+ .cinema-film-facts { grid-template-columns:1fr; gap:22px; padding:28px 4px; }
+ .cinema-details > summary span { display:block; margin:8px 0 0 19px; }
+}
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }

@@ -38,6 +38,8 @@ export default function RootLayout({
                   <Link href="/discover">Discover</Link>
                   <Link href="/recommendations">Movie Match</Link>
                   <Link href="/compare">Compare</Link>
+                  <Link href="/upcoming">Upcoming</Link>
+                  <Link href="/search">Search</Link>
                 </div>
               </div>
             </footer>

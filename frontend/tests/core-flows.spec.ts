@@ -21,6 +21,7 @@ test('detail renders complete analysis with honest empty evidence', async ({ pag
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/movies/fixture-0')
   await expect(page.getByRole('heading', { name: 'Fixture Movie 00', exact: true }).first()).toBeVisible()
+  await page.locator('details.cinema-details > summary').click()
   await expect(page.getByText('No sourced critics discussion is stored for this title.').first()).toBeVisible()
   expect(errors).toEqual([])
 })

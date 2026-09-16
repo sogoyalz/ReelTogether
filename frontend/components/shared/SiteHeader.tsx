@@ -6,13 +6,9 @@ import { usePathname } from 'next/navigation'
 import { Menu, X, Clapperboard } from 'lucide-react'
 
 const navItems = [
-  { href: '/', label: 'Home' },
-  { href: '/movies', label: 'Library' },
   { href: '/discover', label: 'Discover' },
   { href: '/recommendations', label: 'Movie Match' },
   { href: '/movie-night', label: 'Movie Night' },
-  { href: '/upcoming', label: 'Upcoming' },
-  { href: '/search', label: 'Search' },
   { href: '/watchlist', label: 'Watchlist' },
 ]
 
@@ -33,7 +29,7 @@ export function SiteHeader() {
           <span className="brand-symbol"><Clapperboard size={21} aria-hidden="true" /></span>
           <span>
             <strong>ReelTogether</strong>
-            <small>A world of cinema.</small>
+            <small>Find your kind of film.</small>
           </span>
         </Link>
         <button
@@ -46,7 +42,7 @@ export function SiteHeader() {
         >
           {menuOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
-        <nav className={menuOpen ? 'site-nav site-nav-open' : 'site-nav'} id="site-nav">
+        <nav className={menuOpen ? 'site-nav site-nav-open' : 'site-nav'} id="site-nav" aria-label="Main navigation">
           {navItems.map((item) => {
             const isActive =
               item.href === '/'

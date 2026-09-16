@@ -43,7 +43,7 @@ export default function MoviePage() {
   if (movieQuery.isLoading) {
     return (
       <main className="page-shell">
-        <LoadingState title="Loading movie analytics" description="Building the full movie detail surface and charts." />
+        <LoadingState title="Loading your movie" description="Finding the story, cast, and details." />
       </main>
     )
   }
@@ -99,23 +99,17 @@ export default function MoviePage() {
       <Link className="eyebrow" href="/">
         Back to home
       </Link>
-      <div className="hero-actions" style={{ marginTop: 16 }}>
-        {movie.franchise ? <Link className="genre-tag" href={`/franchises/${encodeURIComponent(movie.franchise)}`}>{movie.franchise}</Link> : null}
-        {movie.genres.map((genre) => <Link className="genre-tag" href={`/genres/${encodeURIComponent(genre)}`} key={genre}>{genre}</Link>)}
-      </div>
-      <div style={{ marginTop: 18 }}>
-        {analyticsQuery.isLoading ? (
-          <LoadingState title="Loading hero analytics" description="Pulling live movie-level metrics for the hero surface." />
-        ) : analytics ? (
-          <MovieHero analytics={analytics} movie={movie} />
-        ) : (
-          <SectionNotice
-            description="The page can still show metadata, cast, studios, trailers, and research context while analytics reload."
-            title="Analytics temporarily unavailable"
-          />
-        )}
-      </div>
-
+      <MovieHero movie={movie} />
+      <section className="cinema-film-facts" aria-label="Film details">
+        {movie.directors.length > 0 && <div><span>Directed by</span><p>{movie.directors.map((person, index) => <span key={person}>{index > 0 && ', '}<Link href={`/people/${encodeURIComponent(person)}`}>{person}</Link></span>)}</p></div>}
+        {movie.cast.length > 0 && <div><span>Starring</span><p>{movie.cast.slice(0, 5).join(' · ')}</p></div>}
+        {movie.streaming_on.length > 0 && <div><span>Streaming platforms</span><p>{movie.streaming_on.join(' · ')}</p><small>Availability varies by region.</small></div>}
+      </section>
+      {movie.trailer_embed_url && <section className="cinema-trailer"><div className="section-header"><h2>A first look</h2></div><div className="video-shell"><iframe loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen src={movie.trailer_embed_url} title={`${movie.title} trailer`} /></div></section>}
+      {movie.warnings.length > 0 && <p className="meta cinema-source-note">{movie.warnings[0]}</p>}
+      <details className="cinema-details">
+        <summary>Go deeper <span>Audience insights, film context &amp; detailed analytics</span></summary>
+        <p className="meta">Attention scores and forecasts may be estimates. Source notes and methodology are included below.</p>
       <div className="detail-grid" style={{ marginTop: 28 }}>
         <div className="stack">
           {ai ? (
@@ -487,29 +481,6 @@ export default function MoviePage() {
               </div>
             </div>
           ) : null}
-          {movie.trailer_embed_url ? (
-            <div className="panel">
-              <div className="section-header" style={{ marginTop: 0 }}>
-                <div>
-                  <h3>Trailer</h3>
-                  <p>Embedded trailer view for quick context without leaving the page.</p>
-                </div>
-              </div>
-              <div className="video-shell">
-                <iframe
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  src={movie.trailer_embed_url}
-                  title={`${movie.title} trailer`}
-                />
-              </div>
-            </div>
-          ) : (
-            <EmptyState
-              title="No trailer embed yet"
-              description="A trailer link has not been attached to this movie, so the page falls back to stats and editorial context."
-            />
-          )}
           {movie.backdrops.length ? (
             <div className="panel">
               <div className="section-header" style={{ marginTop: 0 }}>
@@ -602,6 +573,7 @@ export default function MoviePage() {
           </div>
         </div>
       </div>
+      </details>
     </main>
   )
 }
