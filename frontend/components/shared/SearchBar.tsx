@@ -4,11 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { FormEvent, useEffect, useState } from 'react'
 
+import { X } from 'lucide-react'
 import { movieApi } from '@/lib/api'
 import { formatReleaseDate } from '@/lib/formatters'
 
 export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
   const router = useRouter()
+  const [previewOpen,setPreviewOpen] = useState(true)
   const [query, setQuery] = useState(initialValue)
   const [deferredQuery, setDeferredQuery] = useState(query)
   const [previousInitial, setPreviousInitial] = useState(initialValue)
@@ -51,22 +53,25 @@ export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
         <input
           aria-label="Search movies"
           className="search-input"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search titles, studios, franchises, directors, cast, or genres"
+          onChange={(event) => { setQuery(event.target.value); setPreviewOpen(true) }}
+          onFocus={()=>setPreviewOpen(true)}
+          onKeyDown={event=>{if(event.key==='Escape')setPreviewOpen(false)}}
+          placeholder="Search films, filmmakers, cast or genres"
           value={query}
         />
+        {query && <button className="search-clear icon-button" type="button" aria-label="Clear search" onClick={()=>{setQuery('');setDeferredQuery('')}}><X size={16}/></button>}
         <button className="cta-button" type="submit">
           Search
         </button>
       </form>
 
-      {searchPreviewQuery.isLoading && deferredQuery.trim().length > 1 ? (
+      {previewOpen && searchPreviewQuery.isLoading && deferredQuery.trim().length > 1 ? (
         <div className="search-suggestions panel">
           <p className="subtle">Searching...</p>
         </div>
       ) : null}
 
-      {searchPreviewQuery.isError && deferredQuery.trim().length > 1 ? <div className="search-suggestions panel" role="alert"><p>Search is unavailable. Check your connection and try again.</p><button className="cta-button secondary-button" onClick={() => void searchPreviewQuery.refetch()}>Retry search</button></div> : previewItems.length ? (
+      {previewOpen && searchPreviewQuery.isError && deferredQuery.trim().length > 1 ? <div className="search-suggestions panel" role="alert"><p>Search is unavailable. Check your connection and try again.</p><button className="cta-button secondary-button" onClick={() => void searchPreviewQuery.refetch()}>Retry search</button></div> : previewOpen && previewItems.length ? (
         <div className="search-suggestions panel">
           {previewItems.map((item) => (
             <button
@@ -81,11 +86,11 @@ export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
                   {item.status} • {formatReleaseDate(item.release_date)}
                 </span>
               </span>
-              <span className="meta">Hype {item.hype_score}</span>
+              <span className="meta">{item.imdb_rating ? `IMDb ${item.imdb_rating}` : 'Explore ↗'}</span>
             </button>
           ))}
         </div>
-      ) : deferredQuery.trim().length > 1 && !searchPreviewQuery.isLoading ? (
+      ) : previewOpen && deferredQuery.trim().length > 1 && !searchPreviewQuery.isLoading ? (
         <div className="search-suggestions panel">
           <p className="subtle">No quick matches found.</p>
         </div>

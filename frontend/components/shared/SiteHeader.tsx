@@ -1,68 +1,39 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, Clapperboard } from 'lucide-react'
+import { Bookmark, Compass, Film, Menu, Search, Users, X } from 'lucide-react'
+import { SearchBar } from './SearchBar'
+import { useAccount } from '@/lib/account'
 
-const navItems = [
-  { href: '/discover', label: 'Discover' },
-  { href: '/recommendations', label: 'Movie Match' },
-  { href: '/movie-night', label: 'Movie Night' },
-  { href: '/watchlist', label: 'Watchlist' },
-]
+const navItems = [{ href:'/movies', label:'Library' },{ href:'/discover', label:'Discover' },{ href:'/recommendations', label:'Movie Match' },{ href:'/movie-night', label:'Movie Night' }]
+const quickItems = [{ href:'/movies',label:'Library',icon:Film },{ href:'/discover',label:'Discover',icon:Compass },{ href:'/movie-night',label:'Movie Night',icon:Users },{ href:'/watchlist',label:'Watchlist',icon:Bookmark }]
+
+function openSearch(dialog:HTMLDialogElement|null) { dialog?.showModal(); dialog?.querySelector<HTMLInputElement>('input')?.focus() }
 
 export function SiteHeader() {
   const pathname = usePathname()
-  const [menuOpen, setMenuOpen] = useState(false)
-
-  const [previousPath, setPreviousPath] = useState(pathname)
-  if (previousPath !== pathname) {
-    setPreviousPath(pathname)
-    setMenuOpen(false)
-  }
-
-  return (
-    <header className="site-header" onKeyDown={event => { if (event.key === 'Escape') { setMenuOpen(false); document.querySelector<HTMLButtonElement>('.nav-toggle')?.focus() } }}>
-      <div className="site-header-inner">
-        <Link className="brand-mark" href="/">
-          <span className="brand-symbol"><Clapperboard size={21} aria-hidden="true" /></span>
-          <span>
-            <strong>ReelTogether</strong>
-            <small>Find your kind of film.</small>
-          </span>
-        </Link>
-        <button
-          aria-controls="site-nav"
-          aria-expanded={menuOpen}
-          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-          className="nav-toggle"
-          onClick={() => setMenuOpen((open) => !open)}
-          type="button"
-        >
-          {menuOpen ? <X size={18} /> : <Menu size={18} />}
-        </button>
-        <nav className={menuOpen ? 'site-nav site-nav-open' : 'site-nav'} id="site-nav" aria-label="Main navigation">
-          {navItems.map((item) => {
-            const isActive =
-              item.href === '/'
-                ? pathname === '/'
-                : pathname === item.href || pathname.startsWith(`${item.href}/`)
-
-            return (
-              <Link
-                aria-current={isActive ? 'page' : undefined}
-                className={isActive ? 'nav-link nav-link-active' : 'nav-link'}
-                href={item.href}
-                key={item.href}
-                onClick={() => setMenuOpen(false)}
-              >
-                {item.label}
-              </Link>
-            )
-          })}
-        </nav>
+  const account = useAccount()
+  const [menuOpen,setMenuOpen] = useState(false)
+  const [previousPath,setPreviousPath] = useState(pathname)
+  const search = useRef<HTMLDialogElement>(null)
+  if (previousPath !== pathname) { setPreviousPath(pathname); setMenuOpen(false) }
+  useEffect(() => { search.current?.close() },[pathname])
+  useEffect(() => {
+    const shortcut = (event:KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase()==='k') { event.preventDefault(); openSearch(search.current) } }
+    window.addEventListener('keydown',shortcut)
+    return () => window.removeEventListener('keydown',shortcut)
+  },[])
+  const active = (href:string) => pathname===href || pathname.startsWith(`${href}/`)
+  return <>
+    <header className="site-header" onKeyDown={event => { if (event.key==='Escape' && menuOpen) { setMenuOpen(false); document.querySelector<HTMLButtonElement>('.nav-toggle')?.focus() } }}>
+      <div className="site-header-inner"><Link className="brand-mark" href="/" aria-label="ReelTogether home"><span className="brand-symbol" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 30 30" fill="none"><rect x="2" y="3" width="17" height="24" rx="5" stroke="currentColor" strokeWidth="2"/><rect x="11" y="3" width="17" height="24" rx="5" stroke="currentColor" strokeWidth="2"/><path d="M15 10v10m-4-5h8" stroke="currentColor" strokeWidth="2"/></svg></span><span className="brand-name">Reel<span>Together</span><small>THE GOOD FILM CLUB</small></span></Link>
+      <nav className={menuOpen?'site-nav site-nav-open':'site-nav'} id="site-nav" aria-label="Main navigation">{navItems.map(item => <Link key={item.href} href={item.href} aria-current={active(item.href)?'page':undefined} className={active(item.href)?'nav-link nav-link-active':'nav-link'} onClick={()=>setMenuOpen(false)}>{item.label}</Link>)}</nav>
+      <div className="header-actions"><button className="search-trigger icon-button" aria-label="Open search" onClick={()=>openSearch(search.current)}><Search size={19}/><kbd>⌘ K</kbd></button><Link className="header-watchlist" href="/watchlist"><Bookmark size={16}/><span>Watchlist</span>{account.data && <i aria-label={`Signed in as ${account.data.user.username}`}>{account.data.user.username.slice(0,1).toUpperCase()}</i>}</Link><button aria-controls="site-nav" aria-expanded={menuOpen} aria-label={menuOpen?'Close navigation menu':'Open navigation menu'} className="nav-toggle icon-button" onClick={()=>setMenuOpen(!menuOpen)}>{menuOpen?<X size={21}/>:<Menu size={21}/>}</button></div>
       </div>
     </header>
-  )
+    <dialog ref={search} className="search-dialog" aria-labelledby="search-title" onClick={event=>{if(event.target===event.currentTarget)search.current?.close()}}><div className="search-dialog-top"><span className="eyebrow">FOLLOW A TITLE. FIND A WORLD.</span><button className="icon-button" aria-label="Close search" onClick={()=>search.current?.close()}><X size={20}/></button></div><h2 id="search-title">What’s on your mind?</h2><SearchBar /><p className="meta">Search films, filmmakers, cast, studios or genres. Press Escape to close.</p></dialog>
+    <nav className="mobile-dock" aria-label="Quick navigation">{quickItems.map(({href,label,icon:Icon})=><Link key={href} href={href} aria-current={active(href)?'page':undefined}><Icon size={18}/><span>{label}</span></Link>)}</nav>
+  </>
 }

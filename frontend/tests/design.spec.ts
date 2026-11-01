@@ -17,7 +17,7 @@ test('film remains usable when analytics fails and details are keyboard accessib
 test('mobile navigation opens, closes with Escape, and fits the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Your next great movie night.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Great stories. Better together.' })).toBeVisible()
   const toggle = page.getByRole('button', { name: 'Open navigation menu' })
   await toggle.click()
   await expect(page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Movie Night' })).toBeVisible()

@@ -61,7 +61,7 @@ function CompareWorkspace() {
   return (
     <main className="page-shell">
       <section className="hero-panel">
-        <span className="eyebrow">Comparison Tool</span>
+        <span className="eyebrow">SIDE BY SIDE</span>
         <h1 className="hero-title" style={{ fontSize: 'clamp(2.4rem, 6vw, 4.6rem)' }}>
           Put movie hype head to head.
         </h1>

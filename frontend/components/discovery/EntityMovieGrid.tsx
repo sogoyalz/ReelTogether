@@ -5,8 +5,9 @@ import { useState } from 'react'
 import { Pagination } from '@/components/shared/Pagination'
 import { useQuery } from '@tanstack/react-query'
 
+import { MovieGridSkeleton } from '@/components/shared/MovieGridSkeleton'
 import { MovieCard } from '@/components/shared/MovieCard'
-import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
+import { EmptyState, ErrorState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
 
 export function EntityMovieGrid({
@@ -51,7 +52,7 @@ export function EntityMovieGrid({
           <p>{catalogQuery.data?.total || 0} matching movies in the current catalog.</p>
         </div>
       </div>
-      {catalogQuery.isLoading ? <LoadingState title="Loading matching titles" description="Building the entity page from the movie catalog." /> : null}
+      {catalogQuery.isLoading ? <MovieGridSkeleton title="Loading matching titles" /> : null}
       {catalogQuery.isError ? <ErrorState title="Entity page unavailable" description="The matching movie grid could not be loaded." /> : null}
       {!catalogQuery.isLoading && !catalogQuery.isError && !items.length ? (
         <EmptyState title="No matching titles" description="No movies in the current catalog matched this entity page yet." />

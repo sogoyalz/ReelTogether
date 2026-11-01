@@ -5,8 +5,9 @@ import { useState } from 'react'
 import { Pagination } from '@/components/shared/Pagination'
 import { useQuery } from '@tanstack/react-query'
 
+import { MovieGridSkeleton } from '@/components/shared/MovieGridSkeleton'
 import { MovieCard } from '@/components/shared/MovieCard'
-import { ErrorState, LoadingState } from '@/components/shared/QueryState'
+import { ErrorState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
 
 export default function UpcomingPage() {
@@ -27,11 +28,10 @@ export default function UpcomingPage() {
       <section className="hero-panel">
         <span className="eyebrow">Upcoming</span>
         <h1 className="hero-title" style={{ fontSize: 'clamp(2.4rem, 6vw, 4.8rem)' }}>
-          Track the full upcoming release slate.
+          The anticipation is part of it.
         </h1>
         <p className="hero-copy">
-          Every announced or upcoming title in the current catalog, with direct
-          access to each detail page.
+          A new story on the horizon. Explore announced films and upcoming releases, then save the ones you don’t want to miss.
         </p>
         <div className="hero-actions" style={{ marginTop: 22 }}>
           <Link className="cta-button" href="/movies">
@@ -49,7 +49,7 @@ export default function UpcomingPage() {
           <p>{upcomingQuery.data?.total || 0} titles currently listed.</p>
         </div>
       </div>
-      {upcomingQuery.isLoading ? <LoadingState title="Loading upcoming slate" description="Pulling the next release wave from the catalog." /> : null}
+      {upcomingQuery.isLoading ? <MovieGridSkeleton title="Loading upcoming slate" /> : null}
       {upcomingQuery.isError ? <ErrorState title="Upcoming page unavailable" description="The upcoming movie page could not be loaded." /> : null}
       {upcomingQuery.data ? (
         <div className="section-grid">
