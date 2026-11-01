@@ -8,7 +8,7 @@ import { X } from 'lucide-react'
 import { movieApi } from '@/lib/api'
 import { formatReleaseDate } from '@/lib/formatters'
 
-export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
+export function SearchBar({ initialValue = '', onNavigate }: { initialValue?: string; onNavigate?: () => void }) {
   const router = useRouter()
   const [previewOpen,setPreviewOpen] = useState(true)
   const [query, setQuery] = useState(initialValue)
@@ -45,6 +45,7 @@ export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
       return
     }
     router.push(`/search?q=${encodeURIComponent(nextQuery)}`)
+    onNavigate?.()
   }
 
   return (
@@ -77,7 +78,7 @@ export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
             <button
               className="suggestion-row"
               key={item.id}
-              onClick={() => router.push(`/movies/${item.slug}`)}
+              onClick={() => { router.push(`/movies/${item.slug}`); onNavigate?.() }}
               type="button"
             >
               <span>

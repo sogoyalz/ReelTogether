@@ -57,7 +57,7 @@ Verify actual desktop and mobile rendering, keyboard search/focus restoration, n
 ## Verification results
 
 - ESLint, TypeScript and the production build pass.
-- All 34 browser tests pass, including the existing account/recovery/export/deletion, recommendation, catalog and two-user private-voting journeys. Six added redesign cases cover keyboard search and focus, manual spotlight links, narrow-screen filters, reduced motion, deferred insights and poster proportions.
+- All 35 browser tests pass, including the existing account/recovery/export/deletion, recommendation, catalog and two-user private-voting journeys. Seven added redesign cases cover keyboard search and focus, manual spotlight links, narrow-screen filters, reduced motion, deferred insights, poster proportions, and modal completion for query-only navigation or selecting the current film.
 - All 151 backend tests pass; no backend or database code changes are part of this redesign.
 - The production preview was inspected on 16 routes at 360, 390, 768, 1440 and 1920 pixels: 80 views, no horizontal overflow, all document responses successful and no uncaught browser errors. Failed image requests render 16 catalog fallbacks instead of broken image icons. Final artwork sizing received additional targeted checks after visual review.
 - Source and credential-pattern review excludes real environment files, databases, logs, local reports, installed dependencies and editor configuration from publication. The fonts are validated WOFF2 assets, with licenses included. No application dependency was added.
@@ -65,3 +65,5 @@ Verify actual desktop and mobile rendering, keyboard search/focus restoration, n
 The review found and corrected a poster-sizing regression that intercepted room-voting buttons, restored the Upcoming footer route used by existing navigation tests, and corrected the recommendation poster fan's intrinsic proportions. These checks exercise application behavior; they do not certify all accessibility criteria or real-user performance.
 
 Deployment, real provider credentials, live catalog artwork quality and operational monitoring remain environment-specific release work. Some existing demo artwork is illustrative or unavailable upstream; the interface labels demo content and supplies fallbacks. No unsupported streaming, friends feed, taste comparison or mood API is presented as implemented.
+
+A subsequent review reproduced a modal-search bug when only the query changed: the route pathname stayed the same, so the dialog remained open. Search submission and quick-result selection now explicitly notify the modal to close, including a result for the film already displayed. A browser regression covers both cases.
