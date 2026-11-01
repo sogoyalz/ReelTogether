@@ -18,7 +18,10 @@ def configuration_checks():
         'restricted_hosts': bool(settings.TRUSTED_HOSTS) and all('*' not in host for host in settings.TRUSTED_HOSTS),
         'migrations_required': not settings.AUTO_CREATE_TABLES,
         'rate_limiting_enabled': settings.ENABLE_RATE_LIMIT,
+        'shared_auth_limits_configured': bool(settings.REDIS_URL.strip()),
+        'erasure_ledger_configured': bool(settings.ERASURE_LEDGER_PATH) and len(settings.ERASURE_LEDGER_KEY) >= 32,
         'experimental_features_off': not settings.ENABLE_RAG and not settings.ENABLE_USER_FEATURES,
+        'maintenance_is_queued': not settings.ENABLE_STARTUP_SYNC or settings.STARTUP_SYNC_ASYNC,
         'ai_configuration': not settings.ENABLE_ASSISTANT_AI or settings.openai_api_configured,
     }
 

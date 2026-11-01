@@ -36,7 +36,7 @@ export function CriticAudienceDashboard({ ai }: { ai: MovieAIOverview }) {
       <div className="stack" style={{ marginTop: 18 }}>
         <div className="metric-card">
           <div className="metric-label">Alignment Score</div>
-          <div className="metric-value overview-title">{Math.round(comparison.alignment_score * 100)}%</div>
+          <div className="metric-value overview-title">{comparison.alignment_score == null ? "Insufficient evidence" : `${Math.round(comparison.alignment_score * 100)}%`}</div>
           <p className="meta">
             Consensus themes: {comparison.consensus_themes.length ? comparison.consensus_themes.join(', ') : 'Limited overlap'}
           </p>
@@ -97,7 +97,7 @@ function PerspectiveCard({
           <div className="metric-label">{label}</div>
           <p className="subtle" style={{ marginTop: 10 }}>{description}</p>
         </div>
-        <div className="score-pill">{Math.round(((sentimentScore + 1) / 2) * 100)}%</div>
+        <div className="score-pill">{itemCount ? `${Math.round(((sentimentScore + 1) / 2) * 100)}%` : "No reviews"}</div>
       </div>
       <p className="meta" style={{ marginTop: 12 }}>{itemCount} tracked items</p>
       {topThemes.length ? (

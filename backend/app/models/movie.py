@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -80,6 +80,10 @@ class Movie(Base):
 
 class MovieAnalytics(Base):
     __tablename__ = "movie_analytics"
+    __table_args__ = (
+        UniqueConstraint("movie_id", "snapshot_label", name="uq_movie_analytics_label"),
+        Index("ix_movie_analytics_movie_date", "movie_id", "snapshot_date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     movie_id: Mapped[int] = mapped_column(ForeignKey("movies.id"), index=True)

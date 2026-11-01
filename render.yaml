@@ -13,6 +13,10 @@ services:
     envVars:
       - key: PROXY_SHARED_SECRET
         sync: false
+      - key: ERASURE_LEDGER_KEY
+        sync: false
+      - key: ERASURE_LEDGER_PATH
+        value: /data/erasures/deletions.jsonl
       - key: ENVIRONMENT
         value: production
       - key: ENABLE_DOCS

@@ -1,5 +1,7 @@
 # ReelTogether operations
 
+For the current supported production topology, configuration, UID migration and erasure-safe recovery, use [Production candidate](PRODUCTION_CANDIDATE.md). The default Compose file below is the development topology; production uses the standalone `compose.production.yaml`.
+
 Compose runs the API, a database-backed maintenance worker, verified SQLite backups, and a health monitor. Run `docker compose up -d --build` after configuring the ignored root `.env`. Existing database volumes remain in place; startup applies migrations and creates a pre-migration backup.
 
 ## Durable maintenance
@@ -37,3 +39,12 @@ Local reports are stored in `/data/operations/health.json`. An empty webhook URL
 ## Release checks
 
 Run backend unittest discovery, migration upgrade plus `alembic check`, dependency audits, frontend lint/typecheck/build, and browser tests before deployment. Queue and storage regression tests use disposable databases and fake storage, never the live catalog or external notification services.
+
+
+## October 31 maintenance API change
+
+All HTTP provider-refresh actions now enqueue durable jobs. Legacy `POST /api/movies/sync-tmdb` and `POST /api/analytics/refresh` return HTTP 202 with `{job_id,status}`. Targeted movie analytics/sentiment refresh endpoints also return that acknowledgement. Poll `/api/admin/jobs/{job_id}` with the admin key for completion. The old synchronous refresh-count response is no longer returned by these endpoints. Run a worker; an accepted job does not imply provider data has already refreshed.
+
+A healthy running job lease blocks claims for every other catalog mutation job, including targeted refreshes. Completion is fenced by the lease token, and retries remain at least once. Do not run separate maintenance scripts or inline startup sync concurrently with workers. This change does not establish exactly-once external side effects or arbitrary multi-region operation.
+
+`GET /api/admin/metrics` uses the same admin authentication and private/no-store responses. It exposes process-local route-template request counts, server-error counts, duration sums, non-cumulative latency buckets and allowlisted movie-night transition counts. Counters reset on restart and are not a durable SLO or billing system. No usernames, room IDs, invite tokens, chat text or request bodies are retained in these counters. Collect them externally if needed; external alert delivery remains an operator setup task.

@@ -20,6 +20,19 @@ from app.services.cache import TTLCache
 from main import app
 
 class PublicContractTests(unittest.TestCase):
+    def test_out_of_range_movie_ids_are_validated_before_database_queries(self):
+        for movie_id in (2 ** 31, -(2 ** 31) - 1, 2 ** 63, -(2 ** 63) - 1):
+            for path in (f'/api/movies/{movie_id}', f'/api/ai/movie/{movie_id}',
+                         f'/api/analytics/movie/{movie_id}', f'/api/analytics/movie/{movie_id}/history',
+                         f'/api/analytics/movie/{movie_id}/sentiment/timeline',
+                         f'/api/analytics/compare?movie_ids={self.movie.id},{movie_id}'):
+                with self.subTest(path=path):
+                    response = self.client.get(path)
+                    self.assertEqual(response.status_code, 422, response.text)
+        # Signed storage boundaries remain valid input and simply miss the fixture.
+        for movie_id in (2 ** 31 - 1, -(2 ** 31)):
+            self.assertEqual(self.client.get(f'/api/movies/{movie_id}').status_code, 404)
+
     def setUp(self):
         self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
         Base.metadata.create_all(self.engine)
@@ -140,7 +153,7 @@ class PublicContractTests(unittest.TestCase):
     def test_history_does_not_invent_snapshots(self):
         self.assertEqual(len(build_history(self.movie, self.analytics)), 1)
     def test_empty_timeline_does_not_fetch_reviews(self):
-        with patch("app.api.analytics.refresh_review_sentiments_for_movie", side_effect=AssertionError("GET wrote data")):
+        with patch("app.services.review_fetcher.refresh_review_sentiments_for_movie", side_effect=AssertionError("GET wrote data")):
             response = self.client.get(f"/api/analytics/movie/{self.movie.id}/sentiment/timeline")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["total_reviews"], 0)
@@ -149,6 +162,36 @@ class PublicContractTests(unittest.TestCase):
         self.movie.provider_metadata = {"imdb_rating": "5"}
         self.db.commit()
         self.assertEqual(browse_catalog(self.db, CatalogBrowseFilters(min_rating=8)).total, 0)
+
+    def test_home_and_discovery_follow_shared_movie_contracts(self):
+        from app.schemas.discovery import HomePagePayload, DiscoveryDashboardResponse
+        home = self.client.get('/api/movies/home')
+        self.assertEqual(home.status_code,200,home.text)
+        parsed = HomePagePayload.model_validate(home.json())
+        self.assertIsNotNone(parsed.dashboard.updated_at)
+        discovery = self.client.get('/api/search/dashboard')
+        self.assertEqual(discovery.status_code,200,discovery.text)
+        parsed_discovery = DiscoveryDashboardResponse.model_validate(discovery.json())
+        for collection in parsed_discovery.editorial_collections.values():
+            for movie in collection:
+                self.assertIsInstance(movie.field_sources,dict)
+                self.assertIsInstance(movie.warnings,list)
+
+    def test_public_detail_analytics_and_compare_never_fetch_live_metadata(self):
+        from app.services import omdb
+        other = Movie(tmdb_id=43,slug='other-example',title='Other Example',release_date=date(2020,1,1),
+            status='released',genres=['Drama'],tmdb_popularity=10,provider_metadata={'imdb_rating':'7.9','runtime':'122 min'})
+        other.analytics_snapshots.append(MovieAnalytics(snapshot_label='latest'))
+        self.db.add(other); self.db.commit()
+        omdb._CACHE.clear()
+        with patch.object(settings,'OMDB_API_KEY','test-only-configured-key'), patch.object(omdb,'urlopen',side_effect=AssertionError('Public read attempted provider I/O')):
+            for path in [f'/api/movies/{self.movie.id}',f'/api/analytics/movie/{self.movie.id}',f'/api/analytics/compare?movie_ids={self.movie.id},{other.id}']:
+                response = self.client.get(path)
+                self.assertEqual(response.status_code,200,(path,response.text))
+            comparison = self.client.get(f'/api/analytics/compare?movie_ids={self.movie.id},{other.id}').json()
+            self.assertEqual(comparison['items'][1]['imdb_rating'],'7.9')
+        omdb._CACHE.clear()
+
 
 class UtilityTests(unittest.TestCase):
     def test_sentiment_is_monotonic(self):
@@ -164,6 +207,8 @@ class UtilityTests(unittest.TestCase):
             self.assertEqual(cache.get_or_set("2", lambda: 9), 9)
         cache.clear()
         self.assertEqual(len(cache._entries), 0)
+
+
 
 class TrainingAndJobsTests(unittest.TestCase):
     def test_small_training_dataset_is_rejected(self):

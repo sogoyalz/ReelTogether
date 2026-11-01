@@ -66,7 +66,7 @@ export function SearchBar({ initialValue = '' }: { initialValue?: string }) {
         </div>
       ) : null}
 
-      {previewItems.length ? (
+      {searchPreviewQuery.isError && deferredQuery.trim().length > 1 ? <div className="search-suggestions panel" role="alert"><p>Search is unavailable. Check your connection and try again.</p><button className="cta-button secondary-button" onClick={() => void searchPreviewQuery.refetch()}>Retry search</button></div> : previewItems.length ? (
         <div className="search-suggestions panel">
           {previewItems.map((item) => (
             <button

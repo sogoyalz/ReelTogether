@@ -1,9 +1,9 @@
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
+from app.schemas.identifiers import PositiveMovieId as MovieId
 
 Genre = Literal["Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Science Fiction", "Thriller", "War", "Western"]
 Language = Literal["English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Korean", "Japanese", "French", "Spanish"]
-MovieId = Annotated[int, Field(gt=0)]
 
 
 class Filters(BaseModel):

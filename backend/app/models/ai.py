@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -92,6 +92,8 @@ class MovieSummarySnapshot(Base):
 
 class ReviewSentiment(Base):
     __tablename__ = "review_sentiments"
+    __table_args__ = (UniqueConstraint("movie_id", "source", "source_review_id", name="uq_review_provider_identity"),)
+    source_review_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     movie_id: Mapped[int] = mapped_column(ForeignKey("movies.id", ondelete="CASCADE"), index=True)

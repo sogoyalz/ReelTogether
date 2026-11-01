@@ -1,5 +1,9 @@
+from app.schemas.identifiers import MAX_MOVIE_ID, MIN_MOVIE_ID, MovieId
+from app.schemas.jobs import JobAcknowledgement
+from app.schemas.discovery import DashboardResponse
+from app.services.movie_serialization import serialize_summary
 from app.api.admin import _authorize_admin
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -10,7 +14,6 @@ from app.schemas.analytics import (
     CompareMoviesResponse,
     ComparisonEntry,
     MovieAnalyticsResponse,
-    RefreshAnalyticsResponse,
     ScoreBreakdown,
     SentimentTimelinePoint,
     SentimentTimelineResponse,
@@ -21,64 +24,28 @@ from app.repositories import movies as movie_repository
 from app.services.catalog_enrichment import build_history, build_score_breakdown
 from app.services.catalog_enrichment import get_enrichment
 from app.services.movie_data import build_movie_data_contract
-from app.services.omdb import fetch_movie_metadata
-from app.services.review_fetcher import build_sentiment_timeline, refresh_review_sentiments_for_movie
-from app.services.youtube_analytics import refresh_all_movie_analytics, refresh_movie_analytics
+from app.services.provider_metadata import normalize_metadata
+from app.services.review_fetcher import build_sentiment_timeline
 
 router = APIRouter()
 
 
-@router.get("/dashboard")
+@router.get("/dashboard", response_model=DashboardResponse)
 def get_dashboard_snapshot(db: Session = Depends(get_db)):
-    movies = movie_repository.list_movies(db)
-    serialized = []
-    for movie in movies:
-        analytics = next(
-            (snapshot for snapshot in movie.analytics_snapshots if snapshot.snapshot_label == "latest"),
-            None,
-        )
-        if analytics is None:
-            continue
-        serialized.append(
-            {
-                "id": movie.id,
-                "tmdb_id": movie.tmdb_id,
-                "slug": movie.slug,
-                "title": movie.title,
-                "release_date": movie.release_date,
-                "status": movie.status,
-                "poster_url": movie.poster_url,
-                "backdrop_url": movie.backdrop_url,
-                "overview": movie.overview,
-                "genres": movie.genres,
-                "tmdb_popularity": movie.tmdb_popularity,
-                "buzz_score": analytics.buzz_score,
-                "hype_score": analytics.hype_score,
-            }
-        )
-    trending = sorted(serialized, key=lambda movie: movie["buzz_score"], reverse=True)[:5]
-    most_hyped = sorted(serialized, key=lambda movie: movie["hype_score"], reverse=True)[:5]
-    tracked_movies = len(serialized)
-    return {
-        "updated_at": datetime.utcnow(),
-        "trending": trending,
-        "most_hyped": most_hyped,
-        "stats": {
-            "tracked_movies": tracked_movies,
-            "average_hype_score": round(sum(movie["hype_score"] for movie in serialized) / tracked_movies, 2) if tracked_movies else 0.0,
-            "average_buzz_score": round(sum(movie["buzz_score"] for movie in serialized) / tracked_movies, 2) if tracked_movies else 0.0,
-        },
-    }
+    return {"updated_at": datetime.now(timezone.utc),
+        "trending": [serialize_summary(movie) for movie in movie_repository.list_trending_movies(db, limit=5)],
+        "most_hyped": [serialize_summary(movie) for movie in movie_repository.list_most_hyped_movies(db)],
+        "stats": movie_repository.catalog_dashboard_stats(db)}
 
 
 @router.get("/movie/{movie_id}", response_model=MovieAnalyticsResponse)
-def get_movie_analytics(movie_id: int, db: Session = Depends(get_db)):
+def get_movie_analytics(movie_id: MovieId, db: Session = Depends(get_db)):
     movie = movie_repository.get_movie_by_id(db, movie_id)
     analytics = movie_repository.get_movie_analytics(db, movie_id)
     if not movie or not analytics:
         raise HTTPException(status_code=404, detail="Movie not found")
     enrichment = get_enrichment(movie)
-    omdb_metadata = fetch_movie_metadata(movie) or {}
+    omdb_metadata = normalize_metadata(movie.provider_metadata)
     canonical = build_movie_data_contract(
         movie,
         analytics=analytics,
@@ -125,7 +92,7 @@ def get_movie_analytics(movie_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/movie/{movie_id}/history", response_model=AnalyticsHistoryResponse)
-def get_movie_analytics_history(movie_id: int, db: Session = Depends(get_db)):
+def get_movie_analytics_history(movie_id: MovieId, db: Session = Depends(get_db)):
     movie = movie_repository.get_movie_by_id(db, movie_id)
     analytics = movie_repository.get_movie_analytics(db, movie_id)
     if not movie or not analytics:
@@ -146,6 +113,8 @@ def compare_movies(
         raise HTTPException(status_code=422, detail="movie_ids must be a comma separated list of integers") from exc
     if len(ids) != len(set(ids)) or not 2 <= len(ids) <= 4:
         raise HTTPException(status_code=422, detail="Provide between two and four distinct movie ids")
+    if any(not MIN_MOVIE_ID <= movie_id <= MAX_MOVIE_ID for movie_id in ids):
+        raise HTTPException(status_code=422, detail="movie_ids contains an out-of-range integer")
     items = []
     for movie_id in ids:
         movie = movie_repository.get_movie_by_id(db, movie_id)
@@ -153,7 +122,7 @@ def compare_movies(
         if not movie or not analytics:
             raise HTTPException(status_code=404, detail=f"Movie {movie_id} not found")
         enrichment = get_enrichment(movie)
-        omdb_metadata = fetch_movie_metadata(movie) or {}
+        omdb_metadata = normalize_metadata(movie.provider_metadata)
         canonical = build_movie_data_contract(
             movie,
             analytics=analytics,
@@ -203,42 +172,33 @@ def compare_movies(
     return CompareMoviesResponse(compared_at=datetime.utcnow(), items=items)
 
 
-@router.post("/refresh", response_model=RefreshAnalyticsResponse, dependencies=[Depends(_authorize_admin)])
-def refresh_all_analytics(db: Session = Depends(get_db)):
-    result = refresh_all_movie_analytics(db)
-    return RefreshAnalyticsResponse(
-        refreshed_movies=result.refreshed_movies,
-        skipped_movies=result.skipped_movies,
-        failed_movies=result.failed_movies,
-        skipped_reasons=result.skipped_reasons or [],
-        failed_reasons=result.failed_reasons or [],
-    )
+def _enqueue_refresh(name):
+    from app.api.admin import enqueue_response
+    from app.services.background_jobs import job_registry
+    return enqueue_response(lambda: job_registry.enqueue(name).id)
 
 
-@router.post("/movie/{movie_id}/refresh", response_model=RefreshAnalyticsResponse, dependencies=[Depends(_authorize_admin)])
-def refresh_movie(movie_id: int, db: Session = Depends(get_db)):
+@router.post("/refresh", status_code=202, response_model=JobAcknowledgement, dependencies=[Depends(_authorize_admin)], deprecated=True)
+def refresh_all_analytics():
+    return _enqueue_refresh("youtube-refresh")
+
+
+@router.post("/movie/{movie_id}/refresh", status_code=202, response_model=JobAcknowledgement, dependencies=[Depends(_authorize_admin)])
+def refresh_movie(movie_id: MovieId, db: Session = Depends(get_db)):
     if movie_repository.get_movie_by_id(db, movie_id) is None:
         raise HTTPException(status_code=404, detail="Movie not found")
-
-    result = refresh_movie_analytics(db, movie_id)
-    return RefreshAnalyticsResponse(
-        refreshed_movies=result.refreshed_movies,
-        skipped_movies=result.skipped_movies,
-        failed_movies=result.failed_movies,
-        skipped_reasons=result.skipped_reasons or [],
-        failed_reasons=result.failed_reasons or [],
-    )
+    return _enqueue_refresh(f"youtube-refresh:{movie_id}")
 
 
-@router.post("/movie/{movie_id}/sentiment/refresh", dependencies=[Depends(_authorize_admin)])
-def refresh_movie_sentiment(movie_id: int, db: Session = Depends(get_db)):
+@router.post("/movie/{movie_id}/sentiment/refresh", status_code=202, response_model=JobAcknowledgement, dependencies=[Depends(_authorize_admin)])
+def refresh_movie_sentiment(movie_id: MovieId, db: Session = Depends(get_db)):
     if movie_repository.get_movie_by_id(db, movie_id) is None:
         raise HTTPException(status_code=404, detail="Movie not found")
-    return refresh_review_sentiments_for_movie(db, movie_id)
+    return _enqueue_refresh(f"sentiment-refresh:{movie_id}")
 
 
 @router.get("/movie/{movie_id}/sentiment/timeline", response_model=SentimentTimelineResponse)
-def get_movie_sentiment_timeline(movie_id: int, db: Session = Depends(get_db)):
+def get_movie_sentiment_timeline(movie_id: MovieId, db: Session = Depends(get_db)):
     movie = movie_repository.get_movie_by_id(db, movie_id)
     if movie is None:
         raise HTTPException(status_code=404, detail="Movie not found")

@@ -1,10 +1,11 @@
 from datetime import datetime
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 class MovieNight(Base):
     __tablename__ = 'movie_nights'
+    __table_args__ = (Index('ix_movie_nights_host_expiry', 'host_id', 'expires_at'),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     host_id: Mapped[int] = mapped_column(ForeignKey('accounts.id', ondelete='CASCADE'))
     title: Mapped[str] = mapped_column(String(80))
@@ -18,6 +19,7 @@ class MovieNight(Base):
 
 class NightMember(Base):
     __tablename__ = 'night_members'
+    __table_args__ = (Index('ix_night_members_account_room', 'account_id', 'room_id'),)
     room_id: Mapped[str] = mapped_column(ForeignKey('movie_nights.id', ondelete='CASCADE'), primary_key=True)
     account_id: Mapped[int] = mapped_column(ForeignKey('accounts.id', ondelete='CASCADE'), primary_key=True)
     genres: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -25,6 +27,7 @@ class NightMember(Base):
 
 class NightVote(Base):
     __tablename__ = 'night_votes'
+    __table_args__ = (Index('ix_night_votes_account', 'account_id'),)
     room_id: Mapped[str] = mapped_column(ForeignKey('movie_nights.id', ondelete='CASCADE'), primary_key=True)
     account_id: Mapped[int] = mapped_column(ForeignKey('accounts.id', ondelete='CASCADE'), primary_key=True)
     movie_id: Mapped[int] = mapped_column(ForeignKey('movies.id', ondelete='CASCADE'), primary_key=True)

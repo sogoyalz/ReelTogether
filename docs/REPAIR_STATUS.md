@@ -2,7 +2,7 @@
 
 # Repair status — September 13, 2026
 
-The original `PROJECT_REVIEW.md` describes the pre-repair tree. This repair improves the supported catalog/research app; it does not certify that every possible defect is eliminated or that the product is production-proven.
+Earlier review notes describe the pre-repair tree. Current deployment and recovery instructions are in [Production candidate](PRODUCTION_CANDIDATE.md). This repair improves the supported catalog/research app; it does not certify that every possible defect is eliminated or that the product is production-proven.
 
 ## Disposition of the original findings
 

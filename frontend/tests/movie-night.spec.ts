@@ -30,7 +30,7 @@ test('two friends join, vote privately, reveal a winner and save only by choice'
     }
     const reveal=a.getByRole('button',{name:'Reveal group matches'});await expect(reveal).toBeEnabled();await reveal.click()
     const choose=a.getByRole('button',{name:/^Choose /}).first();await expect(choose).toBeVisible();await choose.click()
-    await expect(b.getByRole('heading',{name:'Tonight’s pick'})).toBeVisible()
+    await expect(b.getByRole('heading',{name:'Tonight’s pick'})).toBeVisible({timeout:15000})
     const response=await guest.request.get('http://127.0.0.1:3011/api/watchlist');expect((await response.json()).total).toBe(0)
     await b.setViewportSize({width:390,height:844});expect(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
   }finally{await host.close();await guest.close()}

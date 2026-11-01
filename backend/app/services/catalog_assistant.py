@@ -4,10 +4,11 @@ This is a focused rule-based assistant, not an LLM or a trained recommender.
 Unknown metadata never satisfies a hard constraint. No provider calls on chat.
 """
 import re
+import heapq
 from datetime import date
 from typing import get_args
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from app.models.movie import Movie
 from app.services.provider_metadata import normalize_metadata
 from app.schemas.assistant import ChatRequest, Filters, Genre, Language
@@ -69,6 +70,19 @@ def parse_filters(message: str, previous: Filters):
     return result, recognized, None
 
 
+def unsupported_words(message):
+    """Reject unhandled clauses instead of silently satisfying only half a request."""
+    remainder = message.casefold()
+    for aliases in ALIASES.values():
+        remainder = re.sub(r"\b(?:" + "|".join(map(re.escape, aliases)) + r")\b", " ", remainder)
+    for language in get_args(Language):
+        remainder = re.sub(r"\b" + language.casefold() + r"\b", " ", remainder)
+    remainder = re.sub(r"\b(under|less than|at most|up to|max(?:imum)?)\s+(\d+(?:\.\d+)?|one|two|three)\s*(minutes?|mins?|hours?|hrs?)\b", " ", remainder)
+    remainder = re.sub(r"\b(start over|reset|clear filters|any genre|any language|any length|any runtime|no runtime limit|surprise me|what should i watch)\b", " ", remainder)
+    filler = {"please", "recommend", "recommendations", "recommendation", "movies", "movie", "films", "film", "find", "show", "me", "something", "some", "a", "an", "the", "i", "want", "would", "like", "watch", "to", "for", "tonight", "today", "and", "or", "but", "instead", "however", "no", "not", "without", "avoid", "exclude", "don't", "with", "more", "help", "hi", "hello", "can", "you", "give", "us"}
+    return set(re.findall(r"[\w'-]+", remainder)) - filler
+
+
 def movie_runtime(movie: Movie):
     value = normalize_metadata(movie.provider_metadata).get("runtime")
     if isinstance(value, int) and not isinstance(value, bool):
@@ -84,71 +98,90 @@ def movie_languages(movie: Movie):
     return [name for name, code in LANGUAGE_CODES.items() if original == code or re.search(r"\b" + name.lower() + r"\b", text)]
 
 
+def catalog_rows(db):
+    # Bounded hydration; omit overview, enrichment and analytic history.
+    return db.scalars(select(Movie).options(load_only(Movie.id, Movie.slug, Movie.title,
+        Movie.poster_url, Movie.release_date, Movie.genres, Movie.provider_metadata,
+        Movie.tmdb_popularity, raiseload=True)).where(Movie.release_date <= date.today())
+        .order_by(Movie.id).execution_options(yield_per=128))
+
+
 def recommend(db: Session, payload: ChatRequest, liked_ids=(), disliked_ids=(), watched_ids=()):
     filters, recognized, clarification = parse_filters(payload.message, payload.filters)
+    constraint_message = payload.message
     if re.search(r"\b(?:netflix|hulu|streaming|prime video|available on|disney|rated above|rating above|after \d{4}|before \d{4}|from \d{4})\b", payload.message, re.I):
         clarification = "I can't reliably apply streaming, rating or year requests in chat yet. Use genres, languages and runtime here; streaming availability is not verified."
     # Only released titles can be a recommendation to watch. Never infer streaming availability.
-    catalog = list(db.scalars(select(Movie).where(Movie.release_date <= date.today()).order_by(Movie.id)))
-    by_id = {movie.id: movie for movie in catalog}
     seed_ids = set(liked_ids) | set(payload.favorite_ids)
     reference = re.search(r'\b(?:similar to|like)\s+["“]?(.+?)(?=\s+\b(?:but|under|less than|at most|up to|without)\b|,|$)', payload.message, re.I)
     if reference:
         title = reference[1].strip(' "“”.!?')
-        matches = [movie for movie in catalog if movie.title.casefold() == title.casefold()]
+        matches = []
+        for movie in catalog_rows(db):
+            if movie.title.casefold() == title.casefold():
+                matches.append(movie)
+                if len(matches) == 2: break
         if len(matches) == 1:
             seed_ids.add(matches[0].id)
             # Parse constraints outside the reference, never genre words inside its title.
             remainder = payload.message[:reference.start()] + payload.message[reference.end():]
+            constraint_message = remainder
             filters, _, reference_error = parse_filters(remainder, payload.filters)
             clarification = clarification or reference_error
             recognized = True
         elif title.casefold() not in {alias for aliases in ALIASES.values() for alias in aliases}:
             clarification = "Pick that title in Favourite movies so I can use the exact movie, including its release year."
-    seeds = [by_id[i] for i in sorted(seed_ids) if i in by_id]
+    seeds = list(db.scalars(select(Movie).options(load_only(Movie.id, Movie.title, Movie.genres, raiseload=True))
+        .where(Movie.id.in_(seed_ids), Movie.release_date <= date.today()).order_by(Movie.id)))
     seeds = [m for m in seeds if m.id not in set(disliked_ids)]
     generic = bool(re.fullmatch(r"(?:please )?(?:recommend(?: movies| something| for me)?|find movies|show (?:me )?(?:movies|more)|more(?: please)?|surprise me|what should i watch|help|hi|hello)[.!?]*", payload.message.strip().lower()))
+    if unsupported_words(constraint_message):
+        clarification = clarification or "I don't yet understand every part of that request. I support genres, languages, runtime limits and exact favourite titles. Use the filters or restate those constraints; I won't silently ignore the rest."
+    generic = generic or (bool(re.search(r"\w", payload.message)) and not unsupported_words(constraint_message))
     if clarification or not (recognized or generic):
         return {"reply": clarification or "I can match genres, languages, runtime limits and favourite movies. Try ‘a thriller under two hours’, or use the filters. I don't yet understand that request well enough to change your recommendations.", "filters": payload.filters, "items": [], "total_matches": 0, "mode": "catalog-rules-v1", "needs_clarification": True}
     excluded = set(payload.excluded_ids) | seed_ids | set(disliked_ids) | set(watched_ids)
-    ranked = []
-    for movie in catalog:
-        if movie.id in excluded:
-            continue
-        genres = set(movie.genres or [])
-        if filters.genres and not genres.intersection(filters.genres):
-            continue
-        if genres.intersection(filters.excluded_genres):
-            continue
-        languages = movie_languages(movie)
-        if filters.languages and not set(languages).intersection(filters.languages):
-            continue
-        runtime = movie_runtime(movie)
-        if filters.max_runtime is not None and (runtime is None or runtime > filters.max_runtime):
-            continue
-        reasons = []
-        overlaps = [(len(genres & set(seed.genres or [])) / max(1, len(genres | set(seed.genres or []))), seed) for seed in seeds]
-        overlap, seed = max(overlaps, key=lambda row: row[0]) if overlaps else (0, None)
-        if overlap and seed:
-            shared = sorted(genres & set(seed.genres or []))
-            reasons.append(f"Shares {', '.join(shared)} with {seed.title}.")
-        if filters.genres:
-            reasons.append(f"Matches your {', '.join(sorted(genres.intersection(filters.genres)))} preference.")
-        if filters.languages:
-            reasons.append(f"Catalog language: {', '.join(languages)}.")
-        if filters.max_runtime is not None:
-            reasons.append(f"Stored runtime: {runtime} minutes, within your {filters.max_runtime}-minute limit.")
-        if not reasons:
-            reasons.append("A discovery pick ordered by stored TMDB popularity; rate a few movies to personalize it.")
-        # Similarity is the primary signal; stored popularity is only a tie-breaker.
-        ranked.append((overlap, movie.tmdb_popularity or 0, movie.id, {"movie": {"id": movie.id, "slug": movie.slug, "poster_url": movie.poster_url, "title": movie.title, "release_date": movie.release_date, "genres": movie.genres, "runtime": runtime, "languages": languages}, "reasons": reasons}))
-    ranked.sort(key=lambda row: (-row[0], -row[1], row[2]))
+    total_matches = 0
+    def candidates():
+        nonlocal total_matches
+        for movie in catalog_rows(db):
+            if movie.id in excluded:
+                continue
+            genres = set(movie.genres or [])
+            if filters.genres and not genres.intersection(filters.genres):
+                continue
+            if genres.intersection(filters.excluded_genres):
+                continue
+            languages = movie_languages(movie)
+            if filters.languages and not set(languages).intersection(filters.languages):
+                continue
+            runtime = movie_runtime(movie)
+            if filters.max_runtime is not None and (runtime is None or runtime > filters.max_runtime):
+                continue
+            reasons = []
+            overlaps = [(len(genres & set(seed.genres or [])) / max(1, len(genres | set(seed.genres or []))), seed) for seed in seeds]
+            overlap, seed = max(overlaps, key=lambda row: row[0]) if overlaps else (0, None)
+            if overlap and seed:
+                shared = sorted(genres & set(seed.genres or []))
+                reasons.append(f"Shares {', '.join(shared)} with {seed.title}.")
+            if filters.genres:
+                reasons.append(f"Matches your {', '.join(sorted(genres.intersection(filters.genres)))} preference.")
+            if filters.languages:
+                reasons.append(f"Catalog language: {', '.join(languages)}.")
+            if filters.max_runtime is not None:
+                reasons.append(f"Stored runtime: {runtime} minutes, within your {filters.max_runtime}-minute limit.")
+            if not reasons:
+                reasons.append("A discovery pick ordered by stored TMDB popularity; rate a few movies to personalize it.")
+            # Similarity is the primary signal; stored popularity is only a tie-breaker.
+            total_matches += 1
+            yield (overlap, movie.tmdb_popularity or 0, movie.id, {"movie": {"id": movie.id, "slug": movie.slug, "poster_url": movie.poster_url, "title": movie.title, "release_date": movie.release_date, "genres": movie.genres, "runtime": runtime, "languages": languages}, "reasons": reasons})
+    ranked = heapq.nsmallest(6, candidates(), key=lambda row: (-row[0], -row[1], row[2]))
     items = [row[3] for row in ranked[:6]]
-    reply = f"Here are {len(items)} picks from {len(ranked)} matching released movies."
+    reply = f"Here are {len(items)} picks from {total_matches} matching released movies."
     if not items:
         reply = "No more catalog movies match these constraints. Try removing a filter or starting over. Movies with unknown runtime or language are excluded when those filters are active."
     elif seeds:
         reply += " I used genre overlap with your favourites, then stored popularity to break ties."
     else:
         reply += " Pick a few favourites to make the ranking personal."
-    return {"reply": reply, "filters": filters, "favorite_ids": sorted(set(payload.favorite_ids) | (seed_ids - set(liked_ids)))[:20], "items": items, "total_matches": len(ranked), "mode": "catalog-rules-v1", "needs_clarification": False}
+    return {"reply": reply, "filters": filters, "favorite_ids": sorted(set(payload.favorite_ids) | (seed_ids - set(liked_ids)))[:20], "items": items, "total_matches": total_matches, "mode": "catalog-rules-v1", "needs_clarification": False}

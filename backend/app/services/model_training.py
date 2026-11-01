@@ -268,7 +268,7 @@ def _feature_map(
         "sentiment_score": sentiment_snapshot.sentiment_score if sentiment_snapshot else feature_snapshot.sentiment_score,
         "critic_sentiment": review_landscape["critics"].sentiment_score,
         "audience_sentiment": review_landscape["audience"].sentiment_score,
-        "critic_alignment": review_landscape["alignment_score"],
+        "critic_alignment": review_landscape["alignment_score"] or 0.0,
         "franchise_flag": 1.0 if enrichment.get("franchise") else 0.0,
         "genre_family": 1.0 if "Family" in genres or "Animation" in genres else 0.0,
         "genre_action": 1.0 if "Action" in genres else 0.0,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.review_identity import review_key
+
 from datetime import date
 
 from sqlalchemy import func, or_, select, cast, String
@@ -40,7 +42,7 @@ def list_trending_movies(db: Session, limit: int = 6) -> list[Movie]:
     statement = (
         select(Movie)
         .join(MovieAnalytics)
-        .options(_latest_analytics_option())
+        .options(summary_analytics_option())
         .where(MovieAnalytics.snapshot_label == "latest")
         .order_by(MovieAnalytics.buzz_score.desc(), Movie.title.asc())
         .limit(limit)
@@ -52,7 +54,7 @@ def list_upcoming_movies(db: Session, today: date, limit: int = 6) -> list[Movie
     statement = (
         select(Movie)
         .join(MovieAnalytics)
-        .options(_latest_analytics_option())
+        .options(summary_analytics_option())
         .where(Movie.release_date > today, MovieAnalytics.snapshot_label == "latest")
         .order_by(Movie.release_date.asc(), Movie.title.asc())
         .limit(limit)
@@ -64,7 +66,7 @@ def list_released_movies(db: Session, today: date, limit: int = 12) -> list[Movi
     statement = (
         select(Movie)
         .join(MovieAnalytics)
-        .options(_latest_analytics_option())
+        .options(summary_analytics_option())
         .where(
             MovieAnalytics.snapshot_label == "latest",
             Movie.release_date <= today,
@@ -127,7 +129,7 @@ def get_movie_analytics(db: Session, movie_id: int) -> MovieAnalytics | None:
 
 def upsert_review_sentiments(db: Session, movie_id: int, reviews: list[dict]) -> int:
     existing = {
-        (item.author, item.created_at.isoformat(), item.source): item
+        review_key(item.author, item.created_at, item.source, item.source_review_id): item
         for item in db.scalars(
             select(ReviewSentiment).where(ReviewSentiment.movie_id == movie_id)
         ).all()
@@ -135,7 +137,7 @@ def upsert_review_sentiments(db: Session, movie_id: int, reviews: list[dict]) ->
 
     created = 0
     for review in reviews:
-        key = (review["author"], review["created_at"].isoformat(), review["source"])
+        key = review_key(review["author"], review["created_at"], review["source"], review.get("source_review_id"))
         if key in existing and existing[key].analyzed_at is not None:
             continue
 
@@ -147,9 +149,9 @@ def upsert_review_sentiments(db: Session, movie_id: int, reviews: list[dict]) ->
             row.confidence = review["confidence"]
             row.source = review["source"]
         else:
-            db.add(
-                ReviewSentiment(
+            row = ReviewSentiment(
                     movie_id=movie_id,
+                    source_review_id=review.get("source_review_id"),
                     author=review["author"],
                     content_snippet=review["content"][:200],
                     created_at=review["created_at"],
@@ -158,7 +160,8 @@ def upsert_review_sentiments(db: Session, movie_id: int, reviews: list[dict]) ->
                     confidence=review["confidence"],
                     source=review["source"],
                 )
-            )
+            db.add(row)
+            existing[key] = row
             created += 1
 
     db.commit()
@@ -172,3 +175,15 @@ def list_review_sentiments(db: Session, movie_id: int) -> list[ReviewSentiment]:
         .order_by(ReviewSentiment.created_at.asc(), ReviewSentiment.id.asc())
     )
     return list(db.scalars(statement).all())
+
+
+def catalog_dashboard_stats(db: Session):
+    count, hype, buzz = db.execute(select(func.count(MovieAnalytics.id), func.avg(MovieAnalytics.hype_score),
+        func.avg(MovieAnalytics.buzz_score)).join(Movie, Movie.id == MovieAnalytics.movie_id).where(
+            MovieAnalytics.snapshot_label == "latest")).one()
+    return {"tracked_movies":count, "average_hype_score":round(hype or 0.0,2), "average_buzz_score":round(buzz or 0.0,2)}
+
+
+def list_most_hyped_movies(db: Session, limit=5):
+    return list(db.scalars(select(Movie).join(MovieAnalytics).where(MovieAnalytics.snapshot_label == "latest")
+        .order_by(MovieAnalytics.hype_score.desc(), Movie.id.asc()).limit(limit).options(summary_analytics_option())))

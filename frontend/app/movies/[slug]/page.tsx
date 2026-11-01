@@ -1,24 +1,29 @@
 'use client'
 
 import { useParams } from 'next/navigation'
+import { useState } from 'react'
+import Image from 'next/image'
 
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 
-import { BoxOfficeHistoryChart } from '@/components/movies/BoxOfficeHistoryChart'
+import dynamic from 'next/dynamic'
 import { CriticAudienceDashboard } from '@/components/movies/CriticAudienceDashboard'
 import { ForecastConfidenceCard } from '@/components/movies/ForecastConfidenceCard'
 import { HypeGauge } from '@/components/movies/HypeGauge'
 import { InterestChart } from '@/components/movies/InterestChart'
 import { MovieHero } from '@/components/movies/MovieHero'
 import { ScoreBreakdownCard } from '@/components/movies/ScoreBreakdownCard'
-import { TrendChart } from '@/components/movies/TrendChart'
 import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
 import { formatCompactNumber, formatCurrency } from '@/lib/formatters'
 
+const BoxOfficeHistoryChart = dynamic(() => import('@/components/movies/BoxOfficeHistoryChart').then(module => module.BoxOfficeHistoryChart))
+const TrendChart = dynamic(() => import('@/components/movies/TrendChart').then(module => module.TrendChart))
+
 export default function MoviePage() {
   const params = useParams<{ slug: string }>()
+  const [insightsOpen, setInsightsOpen] = useState(false)
   const movieQuery = useQuery({
     queryKey: ['movie', params.slug],
     queryFn: () => movieApi.getMovieBySlug(params.slug),
@@ -32,12 +37,12 @@ export default function MoviePage() {
   const historyQuery = useQuery({
     queryKey: ['movie-history', movieQuery.data?.id],
     queryFn: () => movieApi.getAnalyticsHistory(movieQuery.data!.id),
-    enabled: Boolean(movieQuery.data?.id),
+    enabled: insightsOpen && Boolean(movieQuery.data?.id),
   })
   const aiQuery = useQuery({
     queryKey: ['movie-ai', movieQuery.data?.id],
     queryFn: () => movieApi.getMovieAI(movieQuery.data!.id),
-    enabled: Boolean(movieQuery.data?.id),
+    enabled: insightsOpen && Boolean(movieQuery.data?.id),
   })
 
   if (movieQuery.isLoading) {
@@ -103,12 +108,13 @@ export default function MoviePage() {
       <section className="cinema-film-facts" aria-label="Film details">
         {movie.directors.length > 0 && <div><span>Directed by</span><p>{movie.directors.map((person, index) => <span key={person}>{index > 0 && ', '}<Link href={`/people/${encodeURIComponent(person)}`}>{person}</Link></span>)}</p></div>}
         {movie.cast.length > 0 && <div><span>Starring</span><p>{movie.cast.slice(0, 5).join(' · ')}</p></div>}
-        {movie.streaming_on.length > 0 && <div><span>Streaming platforms</span><p>{movie.streaming_on.join(' · ')}</p><small>Availability varies by region.</small></div>}
+        {movie.streaming_on.length > 0 && <div><span>Streaming platforms</span><p>{movie.streaming_on.join(' · ')}</p><small>{movie.field_sources.streaming_on === 'generated' ? 'Illustrative availability. ' : 'Availability data: JustWatch via TMDB. '}Availability varies by region. <a href="https://www.justwatch.com/" rel="noreferrer">Check availability</a></small></div>}
       </section>
       {movie.trailer_embed_url && <section className="cinema-trailer"><div className="section-header"><h2>A first look</h2></div><div className="video-shell"><iframe loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen src={movie.trailer_embed_url} title={`${movie.title} trailer`} /></div></section>}
       {movie.warnings.length > 0 && <p className="meta cinema-source-note">{movie.warnings[0]}</p>}
-      <details className="cinema-details">
+      <details onToggle={event => setInsightsOpen(event.currentTarget.open)} className="cinema-details">
         <summary>Go deeper <span>Audience insights, film context &amp; detailed analytics</span></summary>
+        {insightsOpen && <>
         <p className="meta">Attention scores and forecasts may be estimates. Source notes and methodology are included below.</p>
       <div className="detail-grid" style={{ marginTop: 28 }}>
         <div className="stack">
@@ -491,7 +497,7 @@ export default function MoviePage() {
               </div>
               <div className="poster-strip">
                 {movie.backdrops.map((backdrop) => (
-                  <img alt={`${movie.title} backdrop`} className="gallery-image" key={backdrop} src={backdrop} />
+                  <Image alt={`${movie.title} backdrop`} className="gallery-image" key={backdrop} src={backdrop} width={780} height={439} sizes="(max-width: 600px) 90vw, 500px" unoptimized />
                 ))}
               </div>
             </div>
@@ -573,6 +579,7 @@ export default function MoviePage() {
           </div>
         </div>
       </div>
+        </>}
       </details>
     </main>
   )

@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen, HTTPRedirectHandler
 from sqlalchemy import select
 from app.db.session import SessionLocal
 from app.models.jobs import BackgroundJob
+from app.services.background_jobs import utcnow
 from backup_health import backup_healthy
 from job_health import worker_healthy
 
@@ -72,9 +73,22 @@ def collect_checks():
     try:
         with SessionLocal() as db:
             latest = {}
-            for job in db.scalars(select(BackgroundJob).order_by(BackgroundJob.queued_at.desc())):
+            jobs = list(db.scalars(select(BackgroundJob).order_by(BackgroundJob.queued_at.desc()).limit(100)))
+            for job in jobs:
                 latest.setdefault(job.name, job.status)
             checks['maintenance_jobs'] = all(status != 'failed' for status in latest.values())
+            max_age = max(60, int(os.getenv('MONITOR_MAX_QUEUE_AGE_SECONDS','300')))
+            checks['queue_progress'] = all(not (
+                (job.status == 'queued' and (utcnow()-job.queued_at).total_seconds() > max_age)
+                or (job.status == 'running' and job.lease_until <= utcnow())) for job in jobs)
+            if os.getenv('ERASURE_LEDGER_PATH'):
+                from app.models.account import AccountErasure
+                from sqlalchemy import func
+                pending = db.scalar(select(func.min(AccountErasure.requested_at)).where(AccountErasure.exported_at.is_(None)))
+                checks['erasure_receipts'] = pending is None or (utcnow()-pending).total_seconds() < 60
+                exported = db.scalar(select(func.count()).select_from(AccountErasure).where(AccountErasure.exported_at.is_not(None)))
+                ledger = Path(os.environ['ERASURE_LEDGER_PATH'])
+                checks['erasure_ledger'] = not exported or (ledger.is_file() and ledger.stat().st_size > 0)
     except Exception:checks['maintenance_jobs']=False
     return checks
 

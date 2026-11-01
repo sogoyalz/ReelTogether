@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import urlopen
@@ -15,40 +16,39 @@ _CACHE = ExpiringMap()
 
 
 def fetch_movie_wikidata(movie: Movie) -> dict[str, str | list[str] | None] | None:
-    cache_key = f"{movie.title}:{movie.release_date.year}"
+    stored = movie.provider_metadata if isinstance(movie.provider_metadata, dict) else {}
+    entity_id, imdb_id = stored.get('wikidata_id'), stored.get('imdb_id')
+    if not isinstance(entity_id, str) or not re.fullmatch(r'Q[1-9][0-9]*', entity_id):
+        return None
+    if not isinstance(imdb_id, str) or not re.fullmatch(r'tt[0-9]+', imdb_id):
+        return None
+    cache_key = f"{entity_id}:{imdb_id}"
     if cache_key in _CACHE:
         return _CACHE[cache_key]
 
-    candidates = [
-        f"{movie.title} {movie.release_date.year} film",
-        f"{movie.title} film",
-        movie.title,
-    ]
+    # Never adopt the first title-search result. Require a stored canonical
+    # entity and independently matching IMDb ID on the fetched entity.
+    entity = _fetch_entity(entity_id)
+    if entity is None:
+        return None
 
-    for candidate in candidates:
-        entity_id = _search_entity(candidate)
-        if not entity_id:
-            continue
-        entity = _fetch_entity(entity_id)
-        if entity is None:
-            continue
-
-        claims = entity.get("claims", {})
-        metadata = {
-            "id": entity_id,
-            "url": f"{WIKIDATA_PAGE_URL}/{quote(entity_id)}",
-            "label": _localized_value(entity.get("labels", {})),
-            "description": _localized_value(entity.get("descriptions", {})),
-            "instance_of": _claim_labels(claims.get("P31", [])),
-            "genres": _claim_labels(claims.get("P136", [])),
-            "countries": _claim_labels(claims.get("P495", [])),
-        }
-        _CACHE[cache_key] = metadata
-        return metadata
-
-    _CACHE[cache_key] = None
-    return None
-
+    claims = entity.get("claims", {})
+    identifiers = {claim.get('mainsnak', {}).get('datavalue', {}).get('value')
+                   for claim in claims.get('P345', [])
+                   if isinstance(claim.get('mainsnak', {}).get('datavalue', {}).get('value'), str)}
+    if imdb_id not in identifiers:
+        return None
+    metadata = {
+        "id": entity_id,
+        "url": f"{WIKIDATA_PAGE_URL}/{quote(entity_id)}",
+        "label": _localized_value(entity.get("labels", {})),
+        "description": _localized_value(entity.get("descriptions", {})),
+        "instance_of": _claim_labels(claims.get("P31", [])),
+        "genres": _claim_labels(claims.get("P136", [])),
+        "countries": _claim_labels(claims.get("P495", [])),
+    }
+    _CACHE[cache_key] = metadata
+    return metadata
 
 def _search_entity(query: str) -> str | None:
     params = urlencode(

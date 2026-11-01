@@ -76,7 +76,9 @@ function CompareWorkspace() {
           </Link>
         </div>
         <div style={{ marginTop: 22 }}>
+          <label htmlFor="compare-search">Find movies to compare</label>
           <input
+            id="compare-search"
             className="search-input"
             onChange={(event) => { setPickerQuery(event.target.value); setPickerPage(1) }}
             placeholder="Filter compare picker by title, franchise, or studio"
@@ -88,6 +90,7 @@ function CompareWorkspace() {
             <button
               className="cta-button"
               key={movie.id}
+              aria-pressed={selectedSet.has(movie.id)}
               onClick={() => toggleId(movie.id)}
               style={{
                 opacity: selectedSet.has(movie.id) ? 1 : 0.55,

@@ -1,17 +1,22 @@
 """Small authenticated movie-night rooms. Votes remain private until reveal."""
+from app.schemas.identifiers import MovieId
+from app.schemas import movie_night as responses
 import secrets
+import heapq
 import uuid
 from datetime import date, timedelta
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, update, func, delete
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from app.db.session import get_db
 from app.models.account import Account, LoginSession
 from app.models.movie import Movie
 from app.models.movie_night import MovieNight, NightMember, NightVote
 from app.services.authentication import current_session, now, token_digest
+
+from app.services.operational_metrics import record_event
 
 router = APIRouter()
 GENRES = {'Action','Adventure','Animation','Comedy','Crime','Documentary','Drama','Family','Fantasy','History','Horror','Music','Mystery','Romance','Science Fiction','Thriller','War','Western'}
@@ -24,13 +29,13 @@ class JoinRoom(Payload):
     token: str = Field(min_length=32, max_length=100)
 class Preferences(Payload):
     genres: list[str] = Field(default_factory=list, max_length=5)
-    favorites: list[int] = Field(default_factory=list, max_length=5)
+    favorites: list[MovieId] = Field(default_factory=list, max_length=5)
 class Ballot(Payload):
     round_id: int = Field(default=1, ge=1)
-    movie_id: int
+    movie_id: MovieId
     choice: Literal['yes','pass','veto']
 class Winner(Payload):
-    movie_id: int
+    movie_id: MovieId
 
 
 def room_for(db, room_id, account_id, *, write=False, host=False):
@@ -70,7 +75,7 @@ def ranked(db, room):
     return result
 
 
-@router.post('', status_code=201)
+@router.post('', status_code=201, response_model=responses.CreatedRoom)
 def create(payload: CreateRoom, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     # Account-row lock bounds concurrent room creation for one account.
     db.execute(update(Account).where(Account.id == session.account_id).values(username=Account.username))
@@ -81,16 +86,17 @@ def create(payload: CreateRoom, session: LoginSession = Depends(current_session)
     db.add(room); db.flush()
     db.add(NightMember(room_id=room.id, account_id=session.account_id, genres=[], favorites=[]))
     db.commit()
+    record_event('room_created')
     return {'id':room.id, 'invite_token':token}
 
 
-@router.get('')
+@router.get('', response_model=responses.RoomList)
 def rooms(session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     rows = db.scalars(select(MovieNight).join(NightMember, NightMember.room_id == MovieNight.id).where(NightMember.account_id == session.account_id).order_by(MovieNight.expires_at.desc()).limit(50))
     return {'items':[{'id':r.id,'title':r.title,'state':r.state,'expired':r.expires_at <= now()} for r in rows]}
 
 
-@router.post('/join')
+@router.post('/join', response_model=responses.RoomIdentity)
 def join(payload: JoinRoom, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = db.scalar(select(MovieNight).where(MovieNight.invite_hash == token_digest(payload.token)))
     if room is None: raise HTTPException(404, 'Invite not found or no longer valid')
@@ -105,17 +111,31 @@ def join(payload: JoinRoom, session: LoginSession = Depends(current_session), db
     if db.scalar(select(func.count()).select_from(NightMember).where(NightMember.room_id == room.id)) >= 8:
         raise HTTPException(409, 'This room is full (eight people maximum)')
     db.add(NightMember(room_id=room.id, account_id=session.account_id, genres=[], favorites=[])); db.commit()
+    record_event('member_joined')
     return {'id':room.id}
 
 
-@router.get('/{room_id}')
+def room_revision(room, members, votes):
+    # Membership/account deletion can cascade without changing room.version.
+    return f'{room.version}:{members}:{votes}:{int(room.expires_at <= now())}'
+
+
+@router.get('/{room_id}/version', response_model=responses.RoomVersion)
+def version(room_id: str, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
+    room = room_for(db, room_id, session.account_id)
+    members = db.scalar(select(func.count()).select_from(NightMember).where(NightMember.room_id == room_id))
+    votes = db.scalar(select(func.count()).select_from(NightVote).where(NightVote.room_id == room_id))
+    return {'revision': room_revision(room, members, votes), 'state': room.state, 'expired': room.expires_at <= now()}
+
+
+@router.get('/{room_id}', response_model=responses.RoomDetail)
 def detail(room_id: str, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = room_for(db, room_id, session.account_id)
     members = db.execute(select(NightMember, Account.username).join(Account,Account.id == NightMember.account_id).where(NightMember.room_id == room_id).order_by(Account.id)).all()
     votes = list(db.scalars(select(NightVote).where(NightVote.room_id == room_id)))
     me = db.get(NightMember,(room_id,session.account_id))
     movies = {m.id:m for m in db.scalars(select(Movie).where(Movie.id.in_(list(set(room.candidates + me.favorites)))))}
-    return {'id':room.id,'title':room.title,'state':room.state,'is_host':room.host_id == session.account_id,
+    return {'revision':room_revision(room,len(members),len(votes)),'id':room.id,'title':room.title,'state':room.state,'is_host':room.host_id == session.account_id,
         'round_id':room.round_id, 'expired':room.expires_at <= now(),'expires_at':room.expires_at.isoformat()+'Z', 'winner_id':room.winner_id,
         'members':[{'account_id':member.account_id,'username':name,'is_host':member.account_id == room.host_id,'complete':bool(room.candidates) and sum(v.account_id == member.account_id for v in votes) == len(room.candidates)} for member,name in members],
         'preferences':{'genres':me.genres,'favorites':me.favorites},
@@ -125,7 +145,7 @@ def detail(room_id: str, session: LoginSession = Depends(current_session), db: S
         'results':ranked(db,room) if room.state in {'revealed','selected'} else []}
 
 
-@router.put('/{room_id}/preferences')
+@router.put('/{room_id}/preferences', response_model=responses.Ok)
 def preferences(room_id: str, payload: Preferences, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = room_for(db,room_id,session.account_id,write=True); require_state(room,'lobby')
     if any(g not in GENRES for g in payload.genres): raise HTTPException(422,'Unknown genre')
@@ -136,13 +156,16 @@ def preferences(room_id: str, payload: Preferences, session: LoginSession = Depe
     db.commit(); return {'ok':True}
 
 
-@router.post('/{room_id}/start')
+@router.post('/{room_id}/start', response_model=responses.Ok)
 def start(room_id: str, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = room_for(db,room_id,session.account_id,write=True,host=True); require_state(room,'lobby')
     members = list(db.scalars(select(NightMember).where(NightMember.room_id == room_id)))
     if len(members) < 2: raise HTTPException(409,'Invite at least one friend before starting')
-    movies = list(db.scalars(select(Movie).where(Movie.release_date <= date.today())))
-    by_id = {m.id:m for m in movies}
+    favorites = {mid for member in members for mid in member.favorites}
+    by_id = {m.id:m for m in db.scalars(select(Movie).options(load_only(Movie.id, Movie.genres, raiseload=True))
+        .where(Movie.id.in_(favorites), Movie.release_date <= date.today()))}
+    movies = db.scalars(select(Movie).options(load_only(Movie.id, Movie.genres, Movie.tmdb_popularity, raiseload=True))
+        .where(Movie.release_date <= date.today()).execution_options(yield_per=128))
     profiles = [set(member.genres) | {genre for mid in member.favorites if mid in by_id for genre in by_id[mid].genres} for member in members]
     profiles = [p for p in profiles if p]
     favorites = {mid for member in members for mid in member.favorites}
@@ -151,13 +174,14 @@ def start(room_id: str, session: LoginSession = Depends(current_session), db: Se
         similarities = [len(genres & p)/max(1,len(genres | p)) for p in profiles]
         group = (min(similarities)+sum(similarities)/len(similarities))/2 if similarities else 0
         return (-group,-movie.tmdb_popularity,movie.id)
-    candidates = sorted((m for m in movies if m.id not in favorites),key=score)[:8]
+    candidates = heapq.nsmallest(8, (m for m in movies if m.id not in favorites), key=score)
     if len(candidates) < 3: raise HTTPException(409,'Not enough released movies for a shortlist')
     room.candidates=[m.id for m in candidates]; room.round_id += 1; room.state='voting'; db.commit()
+    record_event('voting_started')
     return {'ok':True}
 
 
-@router.put('/{room_id}/vote')
+@router.put('/{room_id}/vote', response_model=responses.Ok)
 def vote(room_id: str, payload: Ballot, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = room_for(db,room_id,session.account_id,write=True); require_state(room,'voting')
     if payload.round_id != room.round_id:
@@ -169,24 +193,24 @@ def vote(room_id: str, payload: Ballot, session: LoginSession = Depends(current_
     db.commit(); return {'ok':True}
 
 
-@router.post('/{room_id}/reveal')
+@router.post('/{room_id}/reveal', response_model=responses.Ok)
 def reveal(room_id: str, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room=room_for(db,room_id,session.account_id,write=True,host=True); require_state(room,'voting')
     members=db.scalar(select(func.count()).select_from(NightMember).where(NightMember.room_id == room_id))
     votes=db.scalar(select(func.count()).select_from(NightVote).where(NightVote.room_id == room_id))
     if votes != members*len(room.candidates): raise HTTPException(409,'Everyone must vote on every film before the reveal')
-    room.state='revealed'; db.commit(); return {'ok':True}
+    room.state='revealed'; db.commit(); record_event('results_revealed'); return {'ok':True}
 
 
-@router.post('/{room_id}/select')
+@router.post('/{room_id}/select', response_model=responses.Ok)
 def choose(room_id: str, payload: Winner, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room=room_for(db,room_id,session.account_id,write=True,host=True); require_state(room,'revealed')
     if not any(r['movie_id'] == payload.movie_id and r['top_match'] for r in ranked(db,room)):
         raise HTTPException(422,'Choose one of the top matches without a veto')
-    room.winner_id=payload.movie_id; room.state='selected'; db.commit(); return {'ok':True}
+    room.winner_id=payload.movie_id; room.state='selected'; db.commit(); record_event('movie_selected'); return {'ok':True}
 
 
-@router.post('/{room_id}/invite')
+@router.post('/{room_id}/invite', response_model=responses.Invite)
 def refresh_invite(room_id: str, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room=room_for(db,room_id,session.account_id,write=True,host=True); require_state(room,'lobby')
     token=secrets.token_urlsafe(32);room.invite_hash=token_digest(token);db.commit()
@@ -197,7 +221,7 @@ class RestartRound(Payload):
     round_id: int = Field(ge=1)
 
 
-@router.post('/{room_id}/restart')
+@router.post('/{room_id}/restart', response_model=responses.RenewedInvite)
 def restart(room_id: str, payload: RestartRound, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = room_for(db, room_id, session.account_id, write=True, host=True)
     if room.state not in {'voting', 'revealed'} or room.round_id != payload.round_id:
@@ -214,10 +238,10 @@ def restart(room_id: str, payload: RestartRound, session: LoginSession = Depends
 
 
 class RemoveMember(Payload):
-    account_id: int
+    account_id: MovieId
 
 
-@router.post('/{room_id}/remove-member')
+@router.post('/{room_id}/remove-member', response_model=responses.RenewedInvite)
 def remove_member(room_id: str, payload: RemoveMember, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     room = room_for(db, room_id, session.account_id, write=True, host=True)
     require_state(room, 'lobby')

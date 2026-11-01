@@ -40,6 +40,7 @@ export default function RootLayout({
                   <Link href="/compare">Compare</Link>
                   <Link href="/upcoming">Upcoming</Link>
                   <Link href="/search">Search</Link>
+                  <Link href="/about">About &amp; data sources</Link>
                 </div>
               </div>
             </footer>

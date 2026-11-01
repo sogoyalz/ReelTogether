@@ -31,6 +31,15 @@ class QueueTests(unittest.TestCase):
             row.lease_until=utcnow()-timedelta(seconds=1)
             row.available_at=utcnow()-timedelta(seconds=1)
             db.commit()
+    def test_catalog_jobs_of_different_names_cannot_run_concurrently(self):
+        self.queue.enqueue('tmdb-sync')
+        self.queue.enqueue('youtube-refresh:42')
+        first = self.queue.claim()
+        self.assertIsNone(self.queue.claim())
+        self.queue.finish(first.id, first.lease_token, result={})
+        second = self.queue.claim()
+        self.assertEqual(second.name, 'youtube-refresh:42')
+
     def test_restart_and_deduplication(self):
         first=self.queue.enqueue('tmdb-sync')
         other=JobRegistry(session_factory=self.factory)

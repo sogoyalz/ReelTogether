@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import date
 
 from app.models.ai import MovieFeatureSnapshot, MoviePredictionSnapshot, MovieSentimentSnapshot
 from app.models.movie import Movie, MovieAnalytics
@@ -167,7 +168,7 @@ def _predict_with_trained_artifact(
         "sentiment_score": sentiment_snapshot.sentiment_score if sentiment_snapshot else feature_snapshot.sentiment_score,
         "critic_sentiment": review_landscape["critics"].sentiment_score,
         "audience_sentiment": review_landscape["audience"].sentiment_score,
-        "critic_alignment": review_landscape["alignment_score"],
+        "critic_alignment": review_landscape["alignment_score"] or 0.0,
         "franchise_flag": 1.0 if enrichment.get("franchise") else 0.0,
         "genre_family": 1.0 if "Family" in movie.genres or "Animation" in movie.genres else 0.0,
         "genre_action": 1.0 if "Action" in movie.genres else 0.0,
@@ -182,34 +183,45 @@ def _predict_with_trained_artifact(
     return predictions
 
 
+def release_distribution_type(movie: Movie, *, box_office: str | None = None) -> str:
+    """Use stored release evidence, never current watch-provider availability.
+
+    release_distribution is an optional provider_metadata record with type,
+    source_url and verified_at. Existing records without that evidence remain
+    unknown; this does not invent or backfill release history.
+    """
+    from datetime import datetime
+    from urllib.parse import urlparse
+
+    if box_office and box_office not in ("N/A", ""):
+        return "theatrical"
+    metadata = movie.provider_metadata if isinstance(movie.provider_metadata, dict) else {}
+    evidence = metadata.get("release_distribution")
+    if not isinstance(evidence, dict) or not isinstance(evidence.get("type"), str):
+        return "unknown"
+    if evidence["type"] not in {"streaming-first", "theatrical"}:
+        return "unknown"
+    source_url, verified_at = evidence.get("source_url"), evidence.get("verified_at")
+    if not isinstance(source_url, str) or not isinstance(verified_at, str):
+        return "unknown"
+    try:
+        url = urlparse(source_url)
+        if url.scheme != "https" or not url.hostname:
+            return "unknown"
+        datetime.fromisoformat(verified_at.replace("Z", "+00:00"))
+    except ValueError:
+        return "unknown"
+    return evidence["type"]
+
+
 def is_non_theatrical_release(
     movie: Movie,
     *,
     enrichment: dict | None = None,
     box_office: str | None = None,
 ) -> bool:
-    """Return True if a title is very likely streaming-first / non-theatrical."""
-    enrichment = enrichment or {}
-    streaming_providers = enrichment.get("streaming_on", [])
-    studios = [s.lower() for s in enrichment.get("studios", [])]
-
-    # Already has real box-office revenue → definitely theatrical
-    if box_office and box_office not in ("N/A", "", None):
-        return False
-
-    # Released but zero theatrical revenue and distributed on a streaming platform
-    if movie.status == "released" and streaming_providers and not any(
-        word in " ".join(studios) for word in ("disney", "universal", "warner", "paramount", "sony", "lionsgate")
-    ):
-        return True
-
-    # Streaming platforms as the only known distributor for upcoming titles
-    streaming_only_platforms = {"netflix", "amazon prime", "apple tv+", "disney+", "hulu", "max", "hbo max", "peacock"}
-    providers_lower = {p.lower() for p in streaming_providers}
-    if providers_lower and providers_lower.issubset(streaming_only_platforms) and not studios:
-        return True
-
-    return False
+    """Whether stored release evidence explicitly identifies streaming-first."""
+    return release_distribution_type(movie, box_office=box_office) == "streaming-first"
 
 
 def normalize_public_forecast(
@@ -241,7 +253,7 @@ def normalize_public_forecast(
             "domestic_total_high_usd": 0.0,
             "forecast_is_public": False,
             "forecast_status": "suppressed",
-            "forecast_note": "Theatrical forecast suppressed — title appears to be streaming-first.",
+            "forecast_note": "Theatrical forecast suppressed — stored release evidence identifies a streaming-first premiere.",
             "engagement_metrics_are_estimated": True,
             "engagement_metrics_note": "Audience attention metrics are modeled estimates.",
             "methodology": None,
@@ -267,6 +279,18 @@ def normalize_public_forecast(
             "feature_importance": [],
         }
 
+    if movie.release_date <= date.today():
+        return {
+            "predicted_opening_weekend_usd": 0.0, "predicted_domestic_total_usd": 0.0,
+            "confidence_score": 0.0, "opening_weekend_low_usd": 0.0, "opening_weekend_high_usd": 0.0,
+            "domestic_total_low_usd": 0.0, "domestic_total_high_usd": 0.0,
+            "forecast_is_public": False, "forecast_status": "unavailable",
+            "forecast_note": "This title has been released; no sourced box-office actuals are stored.",
+            "engagement_metrics_are_estimated": True,
+            "engagement_metrics_note": "Audience attention metrics are modeled estimates unless separately verified.",
+            "methodology": None, "feature_importance": [],
+        }
+
     forecast_is_public = opening > 0 or domestic > 0
     return {
         "predicted_opening_weekend_usd": round(opening, 2) if opening else 0.0,
@@ -278,12 +302,12 @@ def normalize_public_forecast(
         "domestic_total_high_usd": round(domestic_high, 2) if domestic_high else 0.0,
         "forecast_is_public": forecast_is_public,
         "forecast_status": "modeled" if forecast_is_public else "unavailable",
-        "forecast_note": "Forecast is a model estimate based on social signals, trailer reach, and engagement data."
+        "forecast_note": "Illustrative forecast estimate; not a validated prediction of revenue."
         if forecast_is_public
         else "Insufficient data to generate a public forecast for this title.",
         "engagement_metrics_are_estimated": True,
         "engagement_metrics_note": "Audience attention metrics are modeled estimates unless a provider feed explicitly verifies them.",
-        "methodology": "Weighted feature model combining trailer reach, social buzz, search demand, sentiment, and franchise signals.",
+        "methodology": "Catalog imports use a popularity heuristic: opening = max($8M, TMDB popularity × $1.65M); domestic = opening × 2.7 for future releases or × 3.1 for released titles. Demo values are illustrative. These values are not calibrated probabilities or validated forecasts.",
         "feature_importance": [],
     }
 

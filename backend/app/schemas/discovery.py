@@ -1,27 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
 
-class DiscoveryMovieSummary(BaseModel):
-    id: int
-    tmdb_id: int
-    slug: str
-    title: str
-    release_date: date
-    status: str
-    poster_url: str | None = None
-    backdrop_url: str | None = None
-    overview: str | None = None
-    genres: list[str]
-    tmdb_popularity: float
-    buzz_score: float
-    hype_score: float
-    franchise: str | None = None
-    studios: list[str]
-    streaming_on: list[str]
-    cast: list[str]
-    directors: list[str]
+from app.schemas.movie import MovieSummary as DiscoveryMovieSummary
 
 
 class AutocompleteSuggestion(BaseModel):
@@ -42,3 +24,23 @@ class DiscoveryDashboardResponse(BaseModel):
     trending_by_genre: list[DashboardBucket]
     trending_by_franchise: list[DashboardBucket]
     editorial_collections: dict[str, list[DiscoveryMovieSummary]]
+
+
+class DashboardStats(BaseModel):
+    tracked_movies: int
+    average_hype_score: float
+    average_buzz_score: float
+
+
+class DashboardResponse(BaseModel):
+    updated_at: datetime
+    trending: list[DiscoveryMovieSummary]
+    most_hyped: list[DiscoveryMovieSummary]
+    stats: DashboardStats
+
+
+class HomePagePayload(BaseModel):
+    trending: list[DiscoveryMovieSummary]
+    upcoming: list[DiscoveryMovieSummary]
+    released: list[DiscoveryMovieSummary]
+    dashboard: DashboardResponse

@@ -41,3 +41,10 @@ node_modules/
 /.neon
 /.env.local
 /.env.neon
+
+# Secrets for every deployment mode; keep only explicit example templates.
+**/.env*
+!**/.env.example
+
+# Private local review; do not publish workstation paths.
+/PROJECT_REVIEW.md

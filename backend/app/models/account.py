@@ -1,4 +1,5 @@
 from datetime import datetime
+import uuid
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
@@ -7,6 +8,7 @@ from app.db.base import Base
 class Account(Base):
     __tablename__ = "accounts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    erasure_key: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     username: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     recovery_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -36,3 +38,11 @@ class MovieFeedback(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
     movie_id: Mapped[int] = mapped_column(ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True)
     preference: Mapped[str] = mapped_column(String(12), nullable=False)
+
+
+class AccountErasure(Base):
+    """Opaque receipt IDs only; no username, password, or account FK."""
+    __tablename__ = 'account_erasures'
+    erasure_key: Mapped[str] = mapped_column(String(36), primary_key=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    exported_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -1,3 +1,4 @@
+from app.schemas.identifiers import MovieId
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import delete, select
@@ -25,11 +26,18 @@ def coverage(db: Session = Depends(get_db)):
 def chat(payload: ChatRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     liked, disliked, watched = [], [], []
     if request.cookies.get(COOKIE) or payload.use_ai:
-        session = current_session(request, db)
-        feedback = list(db.scalars(select(MovieFeedback).where(MovieFeedback.account_id == session.account_id)))
+        try:
+            session = current_session(request, db)
+        except HTTPException as exc:
+            if exc.status_code != 401 or payload.use_ai:
+                raise
+            # An expired/revoked session must not disable anonymous discovery.
+            response.delete_cookie(COOKIE, path="/api", httponly=True, samesite="strict")
+            session = None
+        feedback = list(db.scalars(select(MovieFeedback).where(MovieFeedback.account_id == session.account_id))) if session else []
         liked = [item.movie_id for item in feedback if item.preference == "like"]
         disliked = [item.movie_id for item in feedback if item.preference == "dislike"]
-        watched = list(db.scalars(select(WatchlistEntry.movie_id).where(WatchlistEntry.account_id == session.account_id, WatchlistEntry.status == "watched")))
+        watched = list(db.scalars(select(WatchlistEntry.movie_id).where(WatchlistEntry.account_id == session.account_id, WatchlistEntry.status == "watched"))) if session else []
     response.headers["Cache-Control"] = "private, no-store"
     return answer_chat(db, payload, liked, disliked, watched)
 
@@ -41,7 +49,7 @@ def feedback(session: LoginSession = Depends(current_session), db: Session = Dep
 
 
 @router.put("/feedback/{movie_id}")
-def set_feedback(movie_id: int, payload: FeedbackRequest, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
+def set_feedback(movie_id: MovieId, payload: FeedbackRequest, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     if db.get(Movie, movie_id) is None:
         raise HTTPException(404, "Movie not found")
     key = (session.account_id, movie_id)
@@ -64,7 +72,7 @@ def set_feedback(movie_id: int, payload: FeedbackRequest, session: LoginSession 
 
 
 @router.delete("/feedback/{movie_id}")
-def remove_feedback(movie_id: int, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
+def remove_feedback(movie_id: MovieId, session: LoginSession = Depends(current_session), db: Session = Depends(get_db)):
     db.execute(delete(MovieFeedback).where(MovieFeedback.account_id == session.account_id, MovieFeedback.movie_id == movie_id))
     db.commit()
     return {"ok": True}

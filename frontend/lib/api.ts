@@ -285,7 +285,7 @@ export interface MovieAIOverview {
     }
     consensus_themes: string[]
     divergence_themes: string[]
-    alignment_score: number
+    alignment_score: number | null
     theme_signals: {
       theme: string
       critic_weight: number
@@ -340,12 +340,9 @@ export interface DiscoveryDashboardResponse {
   editorial_collections: Record<string, MovieSummary[]>
 }
 
-export interface RefreshAnalyticsResponse {
-  refreshed_movies: number
-  skipped_movies: number
-  failed_movies: number
-  skipped_reasons: string[]
-  failed_reasons: string[]
+export interface MaintenanceJobAck {
+  job_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed'
 }
 
 export const movieApi = {
@@ -378,7 +375,7 @@ export const movieApi = {
       })
     ).data,
   refreshAnalytics: async () =>
-    (await api.post<RefreshAnalyticsResponse>('/api/analytics/refresh')).data,
+    (await api.post<MaintenanceJobAck>('/api/analytics/refresh')).data,
   refreshMovieAnalytics: async (id: number) =>
-    (await api.post<RefreshAnalyticsResponse>(`/api/analytics/movie/${id}/refresh`)).data,
+    (await api.post<MaintenanceJobAck>(`/api/analytics/movie/${id}/refresh`)).data,
 }

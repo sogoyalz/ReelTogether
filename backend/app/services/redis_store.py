@@ -30,7 +30,7 @@ def get_redis_client() -> Redis | None:
         _client = client
         return _client
     except RedisError as exc:
-        logger.warning("Redis unavailable, falling back to in-process storage: %s", exc)
+        logger.warning("Redis unavailable (%s)", type(exc).__name__)
         _retry_at = time.monotonic() + 30
         return None
 
@@ -73,9 +73,11 @@ def set_json(key: str, value: Any, ttl_seconds: int) -> bool:
         return False
 
 
-def sliding_window_allow(key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+def sliding_window_allow(key: str, limit: int, window_seconds: int, *, required=False) -> tuple[bool, int]:
     client = get_redis_client()
     if client is None:
+        if required:
+            raise RuntimeError("Shared admission storage unavailable")
         return True, 0
 
     now = time.time()
@@ -89,5 +91,7 @@ def sliding_window_allow(key: str, limit: int, window_seconds: int) -> tuple[boo
     try:
         allowed = bool(client.eval(script, 1, key, now - window_seconds, limit, now, str(uuid.uuid4()), window_seconds))
     except RedisError:
+        if required:
+            raise RuntimeError("Shared admission storage unavailable") from None
         return True, 0
     return allowed, 0 if allowed else window_seconds

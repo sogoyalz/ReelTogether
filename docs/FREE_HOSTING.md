@@ -1,12 +1,14 @@
-# Free portfolio deployment
+# Historical free portfolio deployment
 
-The supported free layout is Vercel Hobby for the Next.js frontend, Render Free for the Python API, and Neon Free for persistent PostgreSQL. The Neon project is linked locally; web-hosting accounts must still be connected before publication. Stay within each provider's free limits; do not enable paid upgrades automatically.
+This document describes an earlier hosting option. The current supported production topology and its Redis, durable erasure-ledger and recovery requirements are documented in [Production candidate](PRODUCTION_CANDIDATE.md). A free service without durable receipt storage does not meet those requirements; do not use this historical recipe as a production launch checklist.
+
+The supported free layout is Vercel Hobby for the Next.js frontend, Render Free for the Python API, and Neon Free for persistent PostgreSQL. Configure database and hosting accounts separately; no project identity or credentials are included in this repository. Stay within each provider's free limits; do not enable paid upgrades automatically.
 
 ## Database
 
 The repository's `neon.ts` declares an empty policy: PostgreSQL only, with no additional services. The local `.neon` link and environment files are ignored by Git. `neon deploy` applies this policy; it does not host the website or run Alembic migrations.
 
-Link project `winter-night-78998447`, branch `production`. Preserve existing local Compose settings when pulling credentials: use a separate ignored `.env.neon` file. Keep database credentials server-side. The Python backend accepts `postgres://`, `postgresql://`, and `postgresql+psycopg://` URLs. Use Neon's direct connection string with TLS for this deployment because startup runs schema migrations on the same URL. The API uses a small connection pool and verifies connections before reuse.
+Link your own database project and choose the intended branch. Preserve existing local Compose settings when pulling credentials: use a separate ignored `.env.neon` file. Keep database credentials server-side. The Python backend accepts `postgres://`, `postgresql://`, and `postgresql+psycopg://` URLs. Use Neon's direct connection string with TLS for this deployment because startup runs schema migrations on the same URL. The API uses a small connection pool and verifies connections before reuse.
 
 ## API
 

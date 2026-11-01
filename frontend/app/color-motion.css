@@ -98,7 +98,7 @@ input[type='checkbox'] { accent-color:var(--accent); }
 .match-data-details,.match-coverage { color:#aaa9a5; background:transparent; }
 .match-favourites button { background:#332a22; border-color:#63513e; color:#f7bb8c; }
 .match-search-results { background:#222528; }
-.match-search-results button { color:var(--text); }
+.match-search-results button { color:#222; }
 .match-results { margin-top:40px; }
 .match-result-heading { border-bottom:1px solid var(--border); padding-bottom:18px; margin-bottom:22px; }
 .match-result-heading h2 { font-size:27px; font-weight:550; }

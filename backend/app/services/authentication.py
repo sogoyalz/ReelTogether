@@ -15,7 +15,9 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.account import Account, LoginSession
 from app.services.cache import ExpiringMap
-from app.services.client_identity import client_identity
+from app.services.client_identity import client_identity, peer_identity
+from app.services.redis_store import sliding_window_allow
+from contextlib import contextmanager
 
 COOKIE = "movie-session"
 SESSION_SECONDS = 7 * 24 * 60 * 60
@@ -44,10 +46,24 @@ def throttle_auth(request: Request, username: str):
     # Signed browser identity separates users behind the frontend proxy.
     # The username limit remains independent, including across new cookies.
     identity = client_identity(request)
+    budgets = [(identity, 60, 3600), ('user:' + username.casefold(), 10, 600),
+               ('peer:' + peer_identity(request), 300, 3600)]
+    # Hash identities before storing keys. Production requires shared admission
+    # and fails closed during Redis outages, including across API processes.
+    if settings.is_production or settings.REDIS_URL.strip():
+        for key, limit, seconds in budgets:
+            try:
+                allowed, retry = sliding_window_allow('auth:' + token_digest(key), limit, seconds, required=True)
+            except RuntimeError:
+                raise HTTPException(503, 'Sign-in is temporarily unavailable; try again shortly', headers={'Retry-After': '5'}) from None
+            if not allowed:
+                raise HTTPException(429, 'Too many authentication attempts; try again later', headers={'Retry-After': str(retry)})
+        return
     timestamp = monotonic()
     with _attempt_lock:
         pending = {}
-        for key, limit, seconds in [(identity, 60, 3600), ("user:" + username, 10, 600)]:
+        for key, limit, seconds in budgets:
+            key = token_digest(key)
             entries = [t for t in _attempts.get(key, []) if timestamp - t < seconds]
             if len(entries) >= limit:
                 raise HTTPException(429, "Too many authentication attempts; try again later", headers={"Retry-After": str(max(1, int(seconds - (timestamp - entries[0])) + 1))})
@@ -59,7 +75,7 @@ def throttle_auth(request: Request, username: str):
 
 def verify_password(account: Account | None, password: str):
     try:
-        with _password_slots:
+        with password_admission():
             valid = passwords.verify(account.password_hash if account else _dummy_hash, password)
     except (VerificationError, InvalidHashError):
         return False
@@ -93,11 +109,31 @@ def current_session(request: Request, db: Session = Depends(get_db)) -> LoginSes
         raise HTTPException(401, "Sign in to use your watchlist")
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         require_same_origin(request)
-        if not hmac.compare_digest(request.headers.get("x-csrf-token", ""), session.csrf_token):
+        supplied_token = request.headers.get("x-csrf-token", "")
+        # compare_digest(str, str) only supports ASCII. Reject malformed input
+        # before comparing so arbitrary HTTP header bytes cannot produce a 500.
+        if not supplied_token.isascii() or not hmac.compare_digest(supplied_token, session.csrf_token):
             raise HTTPException(403, "Invalid CSRF token; reload and try again")
+        if settings.is_production:
+            try:
+                allowed, retry = sliding_window_allow('account-write:' + token_digest(str(session.account_id)), 120, 60, required=True)
+            except RuntimeError:
+                raise HTTPException(503, 'Account changes are temporarily unavailable', headers={'Retry-After':'5'}) from None
+            if not allowed:
+                raise HTTPException(429, 'Too many account changes; try again shortly', headers={'Retry-After':str(retry)})
     return session
 
 
 def hash_password(password: str):
-    with _password_slots:
+    with password_admission():
         return passwords.hash(password)
+
+
+@contextmanager
+def password_admission():
+    if not _password_slots.acquire(blocking=False):
+        raise HTTPException(503, 'Sign-in is busy; try again shortly', headers={'Retry-After': '1'})
+    try:
+        yield
+    finally:
+        _password_slots.release()

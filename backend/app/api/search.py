@@ -12,11 +12,11 @@ from app.schemas.discovery import (
 from app.schemas.movie import CatalogFacets, PaginatedMovieSummaries
 from app.db.session import get_db
 from app.models.movie import Movie
+from app.services.movie_data import derive_canonical_status
 from app.repositories import movies as movie_repository
 from app.services.catalog_browser import CatalogBrowseFilters, browse_catalog
 from app.services.catalog_enrichment import get_enrichment
-from app.api.movies import _serialize_summary_fast
-from app.services.tmdb import sync_tmdb_search_results
+from app.services.movie_serialization import serialize_summary as _serialize_summary_fast
 
 router = APIRouter()
 
@@ -26,15 +26,6 @@ def _latest_analytics(movie: Movie):
         (snapshot for snapshot in movie.analytics_snapshots if snapshot.snapshot_label == "latest"),
         None,
     )
-
-
-def _ensure_search_inventory(db: Session, query: str, minimum_matches: int, import_limit: int) -> list[Movie]:
-    matches = movie_repository.search_movies(db, query)
-    if len(query) < 3 or len(matches) >= minimum_matches:
-        return matches
-
-    sync_tmdb_search_results(db, query, limit=import_limit)
-    return movie_repository.search_movies(db, query)
 
 
 @router.get("", response_model=PaginatedMovieSummaries)
@@ -92,7 +83,7 @@ def suggest_movies(q: str = Query(..., min_length=1), limit: int = Query(default
             id=movie.id,
             slug=movie.slug,
             title=movie.title,
-            status=movie.status,
+            status=derive_canonical_status(movie),
             release_date=movie.release_date,
         )
         for movie in matches
@@ -112,26 +103,7 @@ def discovery_dashboard(db: Session = Depends(get_db)):
             continue
 
         enrichment = get_enrichment(movie)
-        summary = DiscoveryMovieSummary(
-            id=movie.id,
-            tmdb_id=movie.tmdb_id,
-            slug=movie.slug,
-            title=movie.title,
-            release_date=movie.release_date,
-            status=movie.status,
-            poster_url=movie.poster_url,
-            backdrop_url=movie.backdrop_url,
-            overview=movie.overview,
-            genres=movie.genres,
-            tmdb_popularity=movie.tmdb_popularity,
-            buzz_score=analytics.buzz_score,
-            hype_score=analytics.hype_score,
-            franchise=enrichment["franchise"],
-            studios=enrichment["studios"],
-            streaming_on=enrichment["streaming_on"],
-            cast=enrichment["cast"],
-            directors=enrichment["directors"],
-        )
+        summary = _serialize_summary_fast(movie)
         summaries.append(summary)
         for genre in movie.genres:
             genre_buckets[genre].append(analytics.hype_score)

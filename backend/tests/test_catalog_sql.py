@@ -24,7 +24,7 @@ class CatalogSqlTests(unittest.TestCase):
                     overview="literal %_ query; space opera", release_date=date.today()+timedelta(days=i-18),
                     status="announced" if i % 3 else "upcoming", genres=["Drama", "Science Fiction"] if i % 2 else ["Comedy"],
                     tmdb_popularity=i % 7,
-                    provider_metadata={"imdb_rating": ["8.4", "NaN", "N/A", {}, "Infinity", 7.5][i % 6]},
+                    provider_metadata={"imdb_rating": ["8.4", "NaN", "N/A", {}, "Infinity", 7.5, "11", "-1", "1e999", "1e-999", "9e0", None][i % 12]},
                     enrichment_data={"directors": ["Zoë Doe"], "studios": ["Studio A"], "franchise": "Test Saga",
                         "streaming_on": ["Stream"], "cast": ["Actor One"], "writers": ["Writer Two"]})
                 if i % 3:
@@ -92,3 +92,15 @@ class CatalogSqlTests(unittest.TestCase):
             result = browse_catalog(db, CatalogBrowseFilters(page=99))
             self.assertEqual((result.total, result.page, result.total_pages, result.movies), (0, 1, 1, []))
             self.assertTrue(all(values == [] for values in result.facets.values()))
+
+    def test_homepage_aggregates_without_hydrating_the_catalog_or_history(self):
+        import json
+        from app.api.movies import get_homepage_payload
+        loaded = []
+        with Session(self.engine) as db:
+            event.listen(db,'loaded_as_persistent',lambda session,obj:loaded.append(obj))
+            response = get_homepage_payload(db)
+            payload = json.loads(response.body)
+            self.assertGreater(payload['dashboard']['stats']['tracked_movies'],35)
+            self.assertLessEqual(len([obj for obj in loaded if isinstance(obj,Movie)]),21)
+            self.assertTrue(all(obj.snapshot_label=='latest' for obj in loaded if isinstance(obj,MovieAnalytics)))

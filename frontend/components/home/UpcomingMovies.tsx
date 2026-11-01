@@ -3,12 +3,12 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { movieApi, type MovieSummary } from '@/lib/api'
-import { ErrorState, LoadingState } from '@/components/shared/QueryState'
+import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
 
 import { MovieCard } from '../shared/MovieCard'
 
 export function UpcomingMovies({ movies }: { movies?: MovieSummary[] }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['upcoming-movies', 'home', 6],
     queryFn: () => movieApi.getUpcoming(),
     initialData: movies,
@@ -18,9 +18,8 @@ export function UpcomingMovies({ movies }: { movies?: MovieSummary[] }) {
     return <LoadingState title="Loading upcoming slate" description="Pulling the next release wave into the homepage." />
   }
 
-  if (!data?.length) {
-    return <ErrorState title="Upcoming slate unavailable" description="The upcoming feed did not return any titles." />
-  }
+  if (isError) return <ErrorState title="Could not load upcoming titles" description="Check your connection and try again." onRetry={() => void refetch()} />
+  if (!data?.length) return <EmptyState title="No upcoming titles yet" description="The catalog has no matching films right now. Try browsing the library." />
 
   return (
     <div className="section-grid">

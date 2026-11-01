@@ -69,7 +69,21 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Application
 # ---------------------------------------------------------------------------
+from contextlib import asynccontextmanager
+from starlette.concurrency import run_in_threadpool
+
+
+@asynccontextmanager
+async def lifespan(app):
+    await run_in_threadpool(startup_event)
+    try:
+        yield
+    finally:
+        await run_in_threadpool(shutdown_event)
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description=(
@@ -85,6 +99,8 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 # Middleware  (order matters — applied bottom-up)
 # ---------------------------------------------------------------------------
+from app.core.middleware import RequestBodyLimitMiddleware
+app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(RequestContextMiddleware)
 
 if settings.ENABLE_RATE_LIMIT:
@@ -141,7 +157,6 @@ _worker_stop = threading.Event()
 # ---------------------------------------------------------------------------
 # Lifecycle hooks
 # ---------------------------------------------------------------------------
-@app.on_event("startup")
 def startup_event():
     global _worker_thread
 
@@ -175,7 +190,6 @@ def startup_event():
         _worker_thread.start()
 
 
-@app.on_event("shutdown")
 def shutdown_event():
     _worker_stop.set()
     if _worker_thread is not None:
@@ -229,7 +243,7 @@ def readiness_check():
     try:
         with SessionLocal() as db:
             assert_schema_ready(db)
-        ready = True
+        ready = not settings.is_production or redis_health()['connected']
     except Exception:
         ready = False
     status_code = 200 if ready else 503
