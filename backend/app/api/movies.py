@@ -231,7 +231,7 @@ def browse_movie_catalog(
 @router.get("/slug/{slug}", response_model=MovieDetail)
 def get_movie_details_by_slug(slug: str, db: Session = Depends(get_db)):
     """Return full movie detail by URL slug."""
-    movie = movie_repository.get_movie_by_slug(db, slug)
+    movie = movie_repository.get_movie_by_slug(db, slug, with_history=False)
     if not movie:
         raise HTTPException(status_code=404, detail=f"Movie '{slug}' not found")
     return _serialize_detail(movie)
@@ -248,7 +248,7 @@ def sync_movies_from_tmdb():
 @router.get("/{movie_id}", response_model=MovieDetail)
 def get_movie_details(movie_id: MovieId, db: Session = Depends(get_db)):
     """Return full movie detail by numeric ID."""
-    movie = movie_repository.get_movie_by_id(db, movie_id)
+    movie = movie_repository.get_movie_by_id(db, movie_id, with_history=False)
     if not movie:
         raise HTTPException(status_code=404, detail=f"Movie id={movie_id} not found")
     return _serialize_detail(movie)

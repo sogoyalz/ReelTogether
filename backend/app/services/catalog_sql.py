@@ -48,6 +48,15 @@ def _words(expression, postgres=False):
     return select(func.coalesce(aggregate, "")).select_from(values).correlate(Movie).scalar_subquery()
 
 
+def text_lower(db: Session):
+    """Use identical Unicode lowercase semantics in browse and autocomplete."""
+    if db.get_bind().dialect.name == "postgresql":
+        return lambda expression: func.lower(expression.collate("und-x-icu")).collate("C")
+    connection = db.connection().connection.driver_connection
+    connection.create_function("catalog_lower", 1, lambda value: (value or "").lower(), deterministic=True)
+    return func.catalog_lower
+
+
 def browse_sqlite(db: Session, filters):
     return browse_sql(db, filters)
 
@@ -57,10 +66,9 @@ def browse_sql(db: Session, filters):
 
     # Register on the checked-out connection, including independently-created test engines.
     postgres = db.get_bind().dialect.name == "postgresql"
-    lower = (lambda expression: func.lower(expression.collate("und-x-icu")).collate("C")) if postgres else func.catalog_lower
+    lower = text_lower(db)
     if not postgres:
         connection = db.connection().connection.driver_connection
-        connection.create_function("catalog_lower", 1, lambda value: (value or "").lower(), deterministic=True)
         connection.create_function("catalog_rating", 1, _parse_rating, deterministic=True)
 
     today = date.today()

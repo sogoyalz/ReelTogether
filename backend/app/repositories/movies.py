@@ -78,17 +78,19 @@ def list_released_movies(db: Session, today: date, limit: int = 12) -> list[Movi
 
 
 def search_movies(db: Session, query: str, limit: int | None = None) -> list[Movie]:
-    pattern = f"%{query.lower()}%"
+    from app.services.catalog_sql import text_lower
+    lower = text_lower(db)
+    pattern = query.lower()
     statement = (
         select(Movie)
         .outerjoin(MovieAnalytics, (MovieAnalytics.movie_id == Movie.id) & (MovieAnalytics.snapshot_label == "latest"))
-        .options(_latest_analytics_option())
+        .options(summary_analytics_option())
         .where(
             or_(
-                func.lower(Movie.title).like(pattern),
-                func.lower(Movie.overview).like(pattern),
-                func.lower(Movie.status).like(pattern),
-                func.lower(cast(Movie.genres, String)).like(pattern),
+                lower(Movie.title).contains(pattern, autoescape=True),
+                lower(Movie.overview).contains(pattern, autoescape=True),
+                lower(Movie.status).contains(pattern, autoescape=True),
+                lower(cast(Movie.genres, String)).contains(pattern, autoescape=True),
             ),
         )
         .order_by(MovieAnalytics.buzz_score.desc(), Movie.title.asc())
@@ -98,19 +100,19 @@ def search_movies(db: Session, query: str, limit: int | None = None) -> list[Mov
     return list(db.scalars(statement).unique().all())
 
 
-def get_movie_by_id(db: Session, movie_id: int) -> Movie | None:
+def get_movie_by_id(db: Session, movie_id: int, *, with_history: bool = True) -> Movie | None:
     statement = (
         select(Movie)
-        .options(_latest_analytics_option())
+        .options(_latest_analytics_option() if with_history else summary_analytics_option())
         .where(Movie.id == movie_id)
     )
     return db.scalars(statement).unique().first()
 
 
-def get_movie_by_slug(db: Session, slug: str) -> Movie | None:
+def get_movie_by_slug(db: Session, slug: str, *, with_history: bool = True) -> Movie | None:
     statement = (
         select(Movie)
-        .options(_latest_analytics_option())
+        .options(_latest_analytics_option() if with_history else summary_analytics_option())
         .where(Movie.slug == slug)
     )
     return db.scalars(statement).unique().first()
