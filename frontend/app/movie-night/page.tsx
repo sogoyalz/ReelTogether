@@ -1,5 +1,5 @@
 'use client'
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { isAxiosError } from 'axios'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -22,6 +22,8 @@ export default function MovieNightPage(){
 }
 function NightWorkspace({auth}:{auth:AuthState|null}){
   const client=useQueryClient()
+  const mounted=useRef(true)
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
   const location=useSyncExternalStore(subscribeUrl,()=>window.location.search+window.location.hash,()=> '')
   const roomId=new URLSearchParams(location.split('#')[0]).get('room')??''
   const invite=new URLSearchParams(location.split('#')[1]??'').get('invite')??''
@@ -32,13 +34,23 @@ function NightWorkspace({auth}:{auth:AuthState|null}){
   const [notice,setNotice]=useState('')
   const rooms=useQuery({queryKey:['movie-nights',auth?.user.id],enabled:!!auth,queryFn:async()=>(await api.get<{items:{id:string;title:string;state:string;expired:boolean}[]}>('/api/movie-nights')).data})
   const room=useRoom(auth?.user.id,roomId)
-  function open(id:string){setShare('');setNotice('');window.history.replaceState(null,'',id?`/movie-night?room=${encodeURIComponent(id)}`:'/movie-night');window.dispatchEvent(new PopStateEvent('popstate'))}
+  function open(id:string){setShare('');setNotice('');setError('');window.history.replaceState(null,'',id?`/movie-night?room=${encodeURIComponent(id)}`:'/movie-night');window.dispatchEvent(new PopStateEvent('popstate'))}
   function shareToken(token:string){setShare(`${window.location.origin}/movie-night#invite=${encodeURIComponent(token)}`)}
   async function act(path:string,payload:unknown={},method:'post'|'put'='post'){
     if(!auth||busy)return
+    const actionLocation=window.location.href
+    const stillCurrent=()=>mounted.current&&window.location.href===actionLocation
     setBusy(true);setError('');setNotice('')
-    try{const response=await api[method](path,payload,{headers:csrfHeaders(auth)});await client.invalidateQueries({queryKey:['movie-night']});await client.invalidateQueries({queryKey:['movie-nights']});return response.data}
-    catch(e){setError(accountError(e));if(isAxiosError(e)&&e.response?.status===409)await client.invalidateQueries({queryKey:['movie-night']})}finally{setBusy(false)}
+    try{
+      const response=await api[method](path,payload,{headers:csrfHeaders(auth)})
+      await client.invalidateQueries({queryKey:['movie-night']})
+      await client.invalidateQueries({queryKey:['movie-nights']})
+      // A completed write still refreshes data, but its receipt belongs to its original view.
+      return stillCurrent()?response.data:undefined
+    }catch(e){
+      if(stillCurrent())setError(accountError(e))
+      if(isAxiosError(e)&&e.response?.status===409)await client.invalidateQueries({queryKey:['movie-night']})
+    }finally{if(mounted.current)setBusy(false)}
   }
   const data=room.data
   const frozen=busy||!!data?.expired

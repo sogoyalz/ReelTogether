@@ -4,7 +4,7 @@
 
 This audit began on `cinematic-redesign` at `fafba6149fb4c48f90626a670572182a475ffe06`, independently confirming the reported baseline of 35 browser tests and 151 backend tests. It examined PR #2 against `production-hardening`, the runtime and deployment contracts, public and private data paths, query and navigation state, persistence, browser behavior, dependency advisories and rendered accessibility. Passing baseline tests were treated as a starting point.
 
-Fifteen verified defects are recorded below. Repairs preserve the cinematic design, account ownership, CSRF checks, private voting and existing API response shapes. No database migration, production data change, merge, deployment, force-push or PR-base change is part of this audit.
+Sixteen verified defects are recorded below. Repairs preserve the cinematic design, account ownership, CSRF checks, private voting and existing API response shapes. No database migration, production data change, merge, deployment, force-push or PR-base change is part of this audit.
 
 The pass is finite and evidence-based. It does not certify that every possible defect is absent, that every provider is available, or that the product meets every accessibility criterion.
 
@@ -193,9 +193,20 @@ The repository inventory and static checks cover the source tree. Manual tracing
 | Regression | The accessible-name regression also asserts the named homepage region and gallery group. |
 | Verification | Incomplete checks were investigated rather than counted as passes; the source relationships are corrected and targeted browser assertions pass. |
 
+### AUD-16 — Room-switch race misattributes invitations and errors (Medium)
+
+| Field | Evidence |
+|---|---|
+| Location | `frontend/app/movie-night/page.tsx`, `NightWorkspace.act` and room navigation |
+| Root cause | The workspace persists across room URL changes. An asynchronous action's completion updated global invite/error state without checking whether its initiating view was still active; existing errors also survived navigation. |
+| Reproduction | Open room A, hold its invite response, navigate through All rooms to room B, then deliver A's response. A's invite appeared under B's heading. The same scope defect affected late failures and previously displayed errors. |
+| Fix | Capture the action's full originating URL and component lifetime, refresh server-backed caches after successful writes, and publish the action's receipt/error only if the same workspace is still mounted at that URL. Room navigation clears old messages. Writes are not aborted or reported as undone merely because the user navigated away. |
+| Regression | `delayed room actions cannot publish another room’s invite or error`, covering delayed success, delayed failure and an error preceding navigation. It also generates a fresh B invite and verifies that token resolves to B, then checks pending creation while leaving the page and while leaving and returning to the same lobby URL. |
+| Verification | The initial regression failed with an invite input present in B after A's delayed response. A navigation challenge also reproduced an obsolete creation callback changing the Library URL after the workspace was abandoned. Targeted repair tests, including the original two-user voting journey, pass. Expanded rerun and hosted CI results are recorded in the follow-up receipt. |
+
 ## Testing report
 
-Final executed counts and hosted CI evidence are recorded with the publication receipt. The initial fresh baseline was **35 Chromium browser tests, 151 backend tests**. The new suite contains **48 browser tests** and **154 backend tests**; the PostgreSQL catalog suite expands from five to eight tests. Counts describe tests, not a claim of exhaustive coverage.
+Final executed counts and hosted CI evidence are recorded with the publication receipt. The initial fresh baseline was **35 Chromium browser tests, 151 backend tests**. The new suite contains **49 browser tests** and **154 backend tests**; the PostgreSQL catalog suite expands from five to eight tests. Counts describe tests, not a claim of exhaustive coverage.
 
 Relevant commands use the repository's scripts:
 
@@ -259,3 +270,7 @@ Final hosted Chromium/Firefox/WebKit and publication results are recorded in the
 ## GitHub and review status
 
 Work stays on `cinematic-redesign`, targeting `production-hardening` in draft PR #2. Verified changes are pushed only after diff and private-file review. The final delivery records commit IDs, file count, clean-worktree status, push result and CI result. PR #2 must remain draft, open, unmerged and undeployed.
+
+## Follow-up room-context recheck
+
+A recheck after `2005bb2f0d7e27674393e0a6ce1918907df189e5` reproduced AUD-16. The preceding 48-test browser results above remain historical results for that revision; the extra room-race regression expands the suite to 49 cases. Fresh follow-up validation passed all 49 Chromium tests, all 49 WebKit tests, all 154 backend tests, lint, TypeScript and the production build. No backend or schema changes are included in this follow-up. Hosted CI outcomes and the published commit are recorded in the follow-up delivery receipt.
