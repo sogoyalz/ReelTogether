@@ -193,3 +193,8 @@ kbd { font:9px var(--font-body); color:var(--muted); border:1px solid var(--bord
 @media(prefers-reduced-motion:reduce){.skeleton-art{animation:none;}}
 .hero-film-controls button{width:44px;height:44px;}
 @media(max-width:600px){.header-actions .icon-button{width:44px;height:44px;}.night-votes button,.night-genres label,.match-favourites button,.match-prompts button{min-height:44px;}}
+
+/* The poster caption supplies the title when artwork is unavailable. */
+.match-hero-poster .film-artwork-fallback > span{display:none;}
+.match-hero-poster .film-artwork-fallback{padding:8px;}
+.match-hero-poster .film-artwork-fallback svg{width:24px;height:24px;}
