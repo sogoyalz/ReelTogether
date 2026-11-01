@@ -10,7 +10,10 @@ const BACKEND_BASE_URL =
 
 async function proxy(request: NextRequest, params: { path: string[] }) {
   const search = request.nextUrl.searchParams.toString()
-  const path = params.path.join('/')
+  if (params.path.some(part => part === '.' || part === '..' || part.includes('/') || part.includes(String.fromCharCode(92)) || Array.from(part).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))) {
+    return NextResponse.json({ detail: 'Invalid API path' }, { status: 400, headers: { 'Cache-Control': 'private, no-store' } })
+  }
+  const path = params.path.map(part => encodeURIComponent(part)).join('/')
   const url = `${BACKEND_BASE_URL}/api/${path}${search ? `?${search}` : ''}`
 
   const identity = browserIdentity(request)

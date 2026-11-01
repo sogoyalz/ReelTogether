@@ -47,6 +47,14 @@ export function accountError(error: unknown) {
 
 
 export const ACCOUNT_EVENT = 'reeltogether-account-change'
+let changeChannel: BroadcastChannel | null = null
+
+// One channel per page: senders do not receive their own messages.
+export function accountChangeChannel() {
+  if (typeof window === 'undefined' || typeof window.BroadcastChannel === 'undefined') return null
+  try { return changeChannel ??= new BroadcastChannel(ACCOUNT_EVENT) }
+  catch { return null } // Browsers may disable cross-tab messaging.
+}
 
 export async function applyAccount(client: QueryClient, auth: AuthState | null, broadcast = true) {
   await client.cancelQueries()
@@ -55,6 +63,8 @@ export async function applyAccount(client: QueryClient, auth: AuthState | null, 
   client.setQueryData(['account'], auth)
   if (broadcast && typeof window !== 'undefined') {
     // Only a random invalidation marker crosses tabs; credentials stay in memory.
-    try { window.localStorage.setItem(ACCOUNT_EVENT, crypto.randomUUID()) } catch { /* Storage may be disabled. Focus revalidation still works. */ }
+    const marker = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')
+    try { window.localStorage.setItem(ACCOUNT_EVENT, marker) } catch { /* Storage may be disabled. */ }
+    try { accountChangeChannel()?.postMessage(marker) } catch { /* Storage/focus revalidation remains available. */ }
   }
 }

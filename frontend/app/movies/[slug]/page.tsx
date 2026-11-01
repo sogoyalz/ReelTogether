@@ -5,6 +5,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useQuery } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import { MovieHero } from '@/components/movies/MovieHero'
 import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
@@ -14,7 +15,7 @@ const MovieInsights = dynamic(() => import('@/components/movies/MovieInsights').
 export default function MoviePage() {
   const params = useParams<{ slug: string }>()
   const [insightsOpen,setInsightsOpen] = useState(false)
-  const movieQuery = useQuery({ queryKey:['movie',params.slug], queryFn:()=>movieApi.getMovieBySlug(params.slug) })
+  const movieQuery = useQuery({ queryKey:['movie',params.slug], queryFn:()=>movieApi.getMovieBySlug(params.slug), retry: (count, error) => !(isAxiosError(error) && error.response?.status === 404) && count < 3 })
   if (movieQuery.isLoading) {
     return (
       <main className="page-shell">
@@ -26,7 +27,9 @@ export default function MoviePage() {
   if (movieQuery.isError) {
     return (
       <main className="page-shell">
-        <ErrorState title="Movie detail unavailable" description="This movie page could not be loaded right now." onRetry={()=>void movieQuery.refetch()} />
+        {isAxiosError(movieQuery.error) && movieQuery.error.response?.status === 404
+          ? <EmptyState title="Movie not found" description="The requested movie is not in the current catalog." />
+          : <ErrorState title="Movie detail unavailable" description="This movie page could not be loaded right now." onRetry={()=>void movieQuery.refetch()} />}
       </main>
     )
   }

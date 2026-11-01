@@ -36,7 +36,7 @@ test('unknown requests clarify and impossible filters return no movies', async (
   await page.getByRole('button', { name: 'Send message' }).click()
   await expect(page.getByRole('log').getByText(/No more catalog movies/)).toBeVisible()
   await expect(page.getByRole('region', { name: 'Recommended movies' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Start a new chat' }).click()
+  await page.getByRole('button', { name: 'Start over: start a new chat' }).click()
   await expect(page.getByLabel('Language', { exact: true })).toHaveValue('')
 })
 

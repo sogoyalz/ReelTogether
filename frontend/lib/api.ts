@@ -347,8 +347,8 @@ export interface MaintenanceJobAck {
 
 export const movieApi = {
   getCatalog: async (limit = 50) => (await api.get<MovieSummary[]>('/api/movies', { params: { limit } })).data,
-  browseCatalog: async (params: Record<string, string | number | undefined>) =>
-    (await api.get<PaginatedMovieResponse>('/api/movies/browse', { params })).data,
+  browseCatalog: async (params: Record<string, string | number | undefined>, signal?: AbortSignal) =>
+    (await api.get<PaginatedMovieResponse>('/api/movies/browse', { params, signal })).data,
   getTrending: async (limit = 6) =>
     (await api.get<MovieSummary[]>('/api/movies/trending', { params: { limit } })).data,
   getUpcoming: async (limit = 6) =>

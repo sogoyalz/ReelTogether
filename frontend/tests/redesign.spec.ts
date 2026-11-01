@@ -3,7 +3,7 @@ import { expectReadableText } from './contrast'
 
 test('search is a keyboard-accessible modal and restores focus on Escape', async ({ page }) => {
   await page.goto('/')
-  const trigger=page.getByRole('button',{name:'Open search',exact:true})
+  const trigger=page.getByRole('button',{name:'Open search — ⌘ K',exact:true})
   await trigger.click()
   const dialog=page.getByRole('dialog',{name:'What’s on your mind?'})
   await expect(dialog).toBeVisible()
@@ -85,14 +85,14 @@ test('recommendation artwork keeps poster proportions at desktop and mobile widt
 test('modal search closes for query-only changes and the current film', async ({ page }) => {
   await page.goto('/search?q=Fixture')
   const dialog = page.getByRole('dialog', { name: 'What’s on your mind?' })
-  await page.getByRole('button', { name: 'Open search', exact: true }).click()
+  await page.getByRole('button', { name: 'Open search — ⌘ K', exact: true }).click()
   await dialog.getByRole('textbox', { name: 'Search movies' }).fill('Chat')
   await dialog.getByRole('button', { name: 'Search', exact: true }).click()
   await expect(page).toHaveURL(/\/search\?q=Chat$/)
   await expect(dialog).toBeHidden()
 
   await page.goto('/movies/fixture-0')
-  await page.getByRole('button', { name: 'Open search', exact: true }).click()
+  await page.getByRole('button', { name: 'Open search — ⌘ K', exact: true }).click()
   await dialog.getByRole('textbox', { name: 'Search movies' }).fill('Fixture Movie 00')
   await dialog.locator('.suggestion-row').filter({ hasText: 'Fixture Movie 00' }).click()
   await expect(page).toHaveURL(/\/movies\/fixture-0$/)
