@@ -7,6 +7,7 @@ test('recovery code resets password and is consumed', async ({ page }) => {
   await page.getByLabel('Username', { exact: true }).fill(username)
   await page.getByLabel('Password', { exact: true }).fill('test-password-long-123')
   await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Your watchlist', exact: true })).toBeVisible()
   await page.getByRole('link', { name: 'Account security', exact: true }).click()
   await page.getByLabel('Current password').fill('test-password-long-123')
   await page.getByRole('button', { name: 'Generate recovery code' }).click()

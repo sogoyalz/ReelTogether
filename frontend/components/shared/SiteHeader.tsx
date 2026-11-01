@@ -19,7 +19,13 @@ export function SiteHeader() {
   const [previousPath,setPreviousPath] = useState(pathname)
   const search = useRef<HTMLDialogElement>(null)
   if (previousPath !== pathname) { setPreviousPath(pathname); setMenuOpen(false) }
-  useEffect(() => { search.current?.close() },[pathname])
+  const searchPath = useRef(pathname)
+  useEffect(() => {
+    if (searchPath.current !== pathname) {
+      search.current?.close()
+      searchPath.current = pathname
+    }
+  },[pathname])
   useEffect(() => {
     const shortcut = (event:KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase()==='k') { event.preventDefault(); openSearch(search.current) } }
     window.addEventListener('keydown',shortcut)
