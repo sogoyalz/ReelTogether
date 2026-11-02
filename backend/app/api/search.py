@@ -22,10 +22,7 @@ router = APIRouter()
 
 
 def _latest_analytics(movie: Movie):
-    return next(
-        (snapshot for snapshot in movie.analytics_snapshots if snapshot.snapshot_label == "latest"),
-        None,
-    )
+    return movie_repository.latest_analytics(movie)
 
 
 @router.get("", response_model=PaginatedMovieSummaries)
@@ -92,7 +89,7 @@ def suggest_movies(q: str = Query(..., min_length=1), limit: int = Query(default
 
 @router.get("/dashboard", response_model=DiscoveryDashboardResponse)
 def discovery_dashboard(db: Session = Depends(get_db)):
-    movies = movie_repository.list_movies(db)
+    movies = movie_repository.list_summary_movies(db)
     summaries: list[DiscoveryMovieSummary] = []
     genre_buckets: dict[str, list[float]] = defaultdict(list)
     franchise_buckets: dict[str, list[float]] = defaultdict(list)

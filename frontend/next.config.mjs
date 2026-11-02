@@ -9,6 +9,10 @@ const nextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   poweredByHeader: false,
   compress: true,
+  images: { remotePatterns: [
+    { protocol: "https", hostname: "image.tmdb.org", pathname: "/t/p/**" },
+    { protocol: "https", hostname: "images.unsplash.com", pathname: "/**" },
+  ] },
   headers() {
     const headers = [
       { key: "X-Content-Type-Options", value: "nosniff" },

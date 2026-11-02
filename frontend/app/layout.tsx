@@ -1,12 +1,14 @@
-import Link from 'next/link'
 import type { Metadata } from 'next'
+import localFont from 'next/font/local'
+import { SiteFooter } from '@/components/shared/SiteFooter'
 
 import { SiteHeader } from '@/components/shared/SiteHeader'
 
 import './globals.css'
-import './ui-refresh.css'
-import './color-motion.css'
 import { Providers } from './providers'
+
+const bodyFont = localFont({ src:'../public/fonts/manrope-variable.woff2', variable:'--font-sans', display:'swap', weight:'200 800', adjustFontFallback:'Arial' })
+const displayFont = localFont({ src:'../public/fonts/bodoni-moda-variable.woff2', variable:'--font-display', display:'swap', weight:'400 900', preload:false, adjustFontFallback:'Times New Roman' })
 
 export const metadata: Metadata = {
   title: 'ReelTogether',
@@ -19,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" data-scroll-behavior="smooth">
+    <html lang="en" className={`${bodyFont.variable} ${displayFont.variable}`} data-scroll-behavior="smooth">
       <body>
         <Providers>
           <div className="site-frame">
@@ -27,23 +29,7 @@ export default function RootLayout({
             <SiteHeader />
             <div id="main-content" tabIndex={-1} />
             {children}
-            <footer className="site-footer">
-              <div className="site-footer-inner">
-                <div>
-                  <p className="footer-title">ReelTogether</p>
-                  <p className="meta">Good films. Less scrolling. Your next movie night starts here.</p>
-                </div>
-                <div className="footer-links">
-                  <Link href="/movies">Library</Link>
-                  <Link href="/discover">Discover</Link>
-                  <Link href="/recommendations">Movie Match</Link>
-                  <Link href="/compare">Compare</Link>
-                  <Link href="/upcoming">Upcoming</Link>
-                  <Link href="/search">Search</Link>
-                  <Link href="/about">About &amp; data sources</Link>
-                </div>
-              </div>
-            </footer>
+            <SiteFooter />
           </div>
         </Providers>
       </body>

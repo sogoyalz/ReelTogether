@@ -13,6 +13,7 @@ if parsed.hostname not in {'localhost','127.0.0.1'} or parsed.path != '/reeltest
     raise SystemExit('Use an explicit local disposable reeltest database')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import test_catalog_sql
+import test_adversarial_audit
 engine = create_engine(url.replace('postgresql://', 'postgresql+psycopg://', 1))
 schemas = []
 def isolated_engine(*args, **kwargs):
@@ -21,8 +22,8 @@ def isolated_engine(*args, **kwargs):
     schemas.append(schema)
     return engine.execution_options(schema_translate_map={None:schema})
 try:
-    with patch.object(test_catalog_sql, 'create_engine', side_effect=isolated_engine):
-        result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(test_catalog_sql.CatalogSqlTests))
+    with patch.object(test_catalog_sql, 'create_engine', side_effect=isolated_engine), patch.object(test_adversarial_audit, 'create_engine', side_effect=isolated_engine):
+        result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(test_catalog_sql.CatalogSqlTests), unittest.defaultTestLoader.loadTestsFromTestCase(test_adversarial_audit.PublicReadAuditTests)]))
     if not result.wasSuccessful(): raise SystemExit(1)
 finally:
     for schema in schemas:

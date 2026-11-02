@@ -93,11 +93,11 @@ See [engineering plan](docs/ENGINEERING_PLAN.md) for the internship roadmap and 
 
 ## Accounts and watchlists
 
-Open `/watchlist` to register or sign in. Usernames contain 3–32 letters, numbers, or underscores; passwords contain 12–128 characters. Password recovery, email verification, and social login are not implemented. The UI states the recovery limitation before signup. Sessions last seven days, are stored as token hashes, and are revoked on logout. Logout/login changes clear private frontend cache state.
+Open `/watchlist` to register or sign in. Usernames contain 3–32 letters, numbers, or underscores; passwords contain 12–128 characters. Recovery codes can reset a password only after a signed-in user has generated and saved one in Account security. Email verification and social login are not implemented. Sessions last seven days, are stored as token hashes, and are revoked on logout. Logout/login changes clear private frontend cache state.
 
 Write requests require an allowed `Origin` and the session's `X-CSRF-Token`. Configure `CORS_ORIGINS` with the exact frontend origin, including its port; the frontend proxy forwards the origin, CSRF header, and session cookies. Production cookies require HTTPS and `ENVIRONMENT=production`. Authentication attempts have separate limits; the deployment should enforce ingress IP limits, particularly when the backend sits behind a shared proxy.
 
-The supported deployment is still a single backend instance. Account recovery and external hosting/TLS verification are release work before inviting a broad public user base.
+The supported deployment is still a single backend instance. Recovery requires a previously saved code; external hosting/TLS verification remains release work before inviting a broad public user base.
 
 ## Backups and local release
 
@@ -110,9 +110,9 @@ venv/bin/python database_backup.py restore-copy /absolute/path/to/new-backup.sql
 
 The tool refuses existing destinations, uses SQLite's online backup API, checks integrity/foreign keys, and reports table content hashes. Restore to a separate file, stop writers, and deliberately switch the database URL only after verification. Copy backups off the deployment disk; a backup on the same disk does not protect against losing that disk.
 
-The prepared local release runs at **http://localhost:3020** with backend port 8020 and a separate restored 1,369-movie catalog in its Docker volume. The ignored root `.env` selects project `movie-pulse-release` and these ports. `docker compose up -d` resumes it; `docker compose down` stops it without removing the volume. The original development database is preserved. Fresh installations without this local restored copy seed 16 demo titles when provider keys are absent.
+The Compose defaults expose the frontend on localhost port 3000. Existing installations must preserve their database volume during upgrades; avoid volume-removal commands when stopping services. Fresh databases seed 16 clearly labeled demo titles when provider keys are absent.
 
-See [release verification](docs/RELEASE_VERIFICATION.md) for current results and [watchlist mobile screenshot](docs/screenshots/watchlist-mobile.png).
+See [release verification](docs/RELEASE_VERIFICATION.md) for the historical local release results and [the adversarial audit](docs/ADVERSARIAL_AUDIT.md) for the current audit and limitations.
 
 ### Account recovery and operations
 

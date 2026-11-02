@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
+import { MovieGridSkeleton } from '@/components/shared/MovieGridSkeleton'
 import { MovieCard } from '@/components/shared/MovieCard'
-import { EmptyState, ErrorState, LoadingState } from '@/components/shared/QueryState'
+import { EmptyState, ErrorState } from '@/components/shared/QueryState'
 import { movieApi } from '@/lib/api'
 
 const POPULAR_STUDIOS = [
@@ -27,6 +28,7 @@ const POPULAR_STUDIOS = [
 ]
 
 export default function MoviesLibraryPage() {
+  const [filtersOpen,setFiltersOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [genreFilter, setGenreFilter] = useState('all')
@@ -126,7 +128,7 @@ export default function MoviesLibraryPage() {
           Find your next favourite.
         </h1>
         <p className="hero-copy">
-          Find something familiar or discover something unexpected. Filter by genre, year, or the people behind the film.
+          A film for every kind of night. Explore the collection, or follow the people and stories you love.
         </p>
         <div className="hero-actions" style={{ marginTop: 22 }}>
           <Link className="cta-button" href="/upcoming">
@@ -146,11 +148,12 @@ export default function MoviesLibraryPage() {
 
       <div className="section-header">
         <div>
-          <h2>Library Filters</h2>
+          <h2>Your kind of film.</h2>
           <p>Filter by release year, genre, status, score, popularity, and streaming availability.</p>
         </div>
       </div>
-      <div className="filter-grid panel">
+      <button type="button" className="cta-button secondary-button filter-toggle" aria-expanded={filtersOpen} aria-controls="catalog-filter-controls" onClick={()=>setFiltersOpen(!filtersOpen)}>{filtersOpen ? 'Hide filters' : 'Refine your search'} <span aria-hidden="true">{filtersOpen ? '−' : '+'}</span></button>
+      <div className="filter-grid panel" id="catalog-filter-controls" hidden={!filtersOpen}>
         <label>
           <span className="metric-label">Search</span>
           <input className="search-input" onChange={(event) => setQuery(event.target.value)} placeholder="Search movies, cast, franchise, studio" value={query} />
@@ -236,14 +239,14 @@ export default function MoviesLibraryPage() {
 
       <div className="section-header">
         <div>
-          <h2>Matching Movies</h2>
+          <h2>In the collection.</h2>
           <p>{response?.total || 0} titles match the current filters.</p>
         </div>
         {response ? (
           <p className="meta">{sortBy === 'none' ? `No manual sort applied. Showing ${filteredMovies.length} titles on this page.` : `Sorted by ${sortBy}. Showing ${filteredMovies.length} titles on this page.`}</p>
         ) : null}
       </div>
-      {catalogQuery.isLoading ? <LoadingState title="Loading library" description="Applying filters and building the current movie page." /> : null}
+      {catalogQuery.isLoading ? <MovieGridSkeleton title="Loading library" /> : null}
       {catalogQuery.isError ? <ErrorState title="Library unavailable" description="The movie library could not be loaded." /> : null}
       {!catalogQuery.isLoading && !catalogQuery.isError && !filteredMovies.length ? (
         <EmptyState title="No movies matched" description="Try broadening the filters or clearing a few constraints." />

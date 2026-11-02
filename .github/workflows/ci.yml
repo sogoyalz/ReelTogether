@@ -43,6 +43,11 @@ jobs:
       - run: python tests/postgres_smoke.py && python tests/postgres_catalog.py && python tests/postgres_hardening.py
         working-directory: backend
   frontend:
+    name: frontend (${{ matrix.browser }})
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     runs-on: ubuntu-latest
     env:
       NEXT_TELEMETRY_DISABLED: '1'
@@ -64,16 +69,16 @@ jobs:
         working-directory: frontend
       - run: npm run lint && npm run typecheck && npm run build
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
         working-directory: frontend
-      - run: npm test
+      - run: npm test -- --browser=${{ matrix.browser }}
         working-directory: frontend
         env:
           BACKEND_PYTHON: python
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-failure-traces
+          name: browser-failure-traces-${{ matrix.browser }}
           path: frontend/test-results
   security:
     runs-on: ubuntu-latest

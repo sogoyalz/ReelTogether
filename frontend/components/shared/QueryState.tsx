@@ -8,7 +8,7 @@ export function LoadingState({
   description?: string
 }) {
   return (
-    <div className="panel empty-state" role="status">
+    <div className="panel empty-state" role="status"><div className="loading-shapes" aria-hidden="true"><i/><i/><i/></div>
       <h3>{title}</h3>
       <p className="subtle">{description}</p>
     </div>
