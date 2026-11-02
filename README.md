@@ -6,10 +6,12 @@ Repository: [sogoyalz/ReelTogether](https://github.com/sogoyalz/ReelTogether)
 
 Movie discovery and research with a Next.js / TypeScript frontend and FastAPI / SQLAlchemy backend. Browse and filter a catalog, inspect provider metadata, compare up to four films, and inspect stored audience discussions. Attention scores and revenue estimates are experimental heuristics, not validated predictions.
 
+See the [current architecture and experimental-scope decisions](docs/SUPPORTED_ARCHITECTURE.md).
+
 ## Supported scope
 
 - Paginated catalog, upcoming releases, director/studio/genre/franchise pages, and comparison links.
-- Username/password accounts and private watchlists: save/remove movies, mark watched, and sign out. Argon2id password hashing, revocable server-side sessions, CSRF checks, and server-enforced ownership.
+- Username/password accounts and private watchlists: save/remove movies, mark watched, change passwords, revoke other browser sessions, export data, delete an account, and sign out. Argon2id password hashing, revocable server-side sessions, CSRF checks, and server-enforced ownership.
 - TMDB metadata ingestion with stable provider IDs; persisted enrichment and OMDb ratings.
 - YouTube observations and dated snapshots when a key and supported trailer URL are available.
 - Source-aware detail responses, conservative forecast suppression, and explicit missing-review states.
@@ -20,7 +22,7 @@ With no provider keys, an empty database is seeded with **demo data**. Existing 
 
 Movie Match (`/recommendations`) now provides focused catalog chat, explainable genre-based recommendations, and account-owned taste feedback. See [Movie Match](docs/MOVIE_MATCH.md) for supported requests and limitations. Optional natural-language preference interpretation is implemented behind configuration and user opt-in; see [interpretation setup](docs/INTERPRETATION_SETUP.md). Live model validation awaits credentials. General-purpose chat and trained forecasting remain outside the supported scope. Legacy rating/recommendation APIs remain disabled by default and unavailable in production. The new authenticated account/watchlist API is separate and enabled. Optional RAG dependencies are isolated in `backend/requirements-experimental.txt`; they are not included in the core runtime or its audit claim.
 
-Latest engineering verification: [Reliability repairs](docs/RELIABILITY_REPAIRS.md).
+Current production candidate and release procedure: [Production candidate](docs/PRODUCTION_CANDIDATE.md). This is a locally verified release candidate; hosted TLS, offsite recovery and external monitoring still require activation checks. Earlier implementation: [October 31 hardening release](docs/HARDENING_RELEASE.md). Earlier verification: [Reliability repairs](docs/RELIABILITY_REPAIRS.md).
 
 ## Local setup
 
@@ -80,22 +82,22 @@ The backend applies migrations before Uvicorn starts. Compose stores SQLite in t
 
 `render.yaml` describes an alternative single-instance deployment with a persistent backend disk. Configure both services' identical proxy secret, allowed hosts/origins, admin key, provider keys, and the frontend API base URL. The images, local container startup, frontend proxy, persistence across restart, and restoration of a 1,369-movie database have been verified locally. Render account deployment remains pending. The backend requires persistent storage; ephemeral free-tier storage is unsuitable for this SQLite configuration.
 
-The current design is for a **single backend instance**. Maintenance jobs persist in the database with retry limits and expiring worker leases. Before scaling horizontally, use a durable queue, coordinated scheduling, a supported shared database deployment, and off-host backup retention/restore procedures. `/health/live` checks process availability; `/health/ready` checks the database independently of optional provider refreshes.
+The current design is for a **single backend instance**. Maintenance jobs persist in the database with retry limits and expiring worker leases. The durable queue serializes healthy maintenance workers across job names. Horizontal scaling still requires verification of shared authentication limits, database capacity, provider budgets and off-host restore procedures. `/health/live` checks process availability; `/health/ready` checks the database independently of optional provider refreshes.
 
 ## Forecast experiments
 
 `backend/train_models.py` is an explicit offline command. It refuses fewer than 30 eligible titles, overlapping train/test partitions, and missing observed targets. Eligible features must have `feature_version="observed-v1"` and predate release. Targets must be stored under `provider_metadata.box_office_targets` with `source_url`, `verified_at`, `opening_usd`, and `domestic_usd`. No valid training dataset is bundled. The public app does not claim to serve a trained model or calibrated confidence interval.
 
-See [engineering plan](docs/ENGINEERING_PLAN.md) for the internship roadmap and honest résumé wording, [repair status](docs/REPAIR_STATUS.md) for completed work and limitations, and [original review](PROJECT_REVIEW.md) for the pre-repair findings.
+See [engineering plan](docs/ENGINEERING_PLAN.md) for the internship roadmap and honest résumé wording, [repair status](docs/REPAIR_STATUS.md) for completed work and limitations.
 
 
 ## Accounts and watchlists
 
-Open `/watchlist` to register or sign in. Usernames contain 3–32 letters, numbers, or underscores; passwords contain 12–128 characters. Password recovery, email verification, and social login are not implemented. The UI states the recovery limitation before signup. Sessions last seven days, are stored as token hashes, and are revoked on logout. Logout/login changes clear private frontend cache state.
+Open `/watchlist` to register or sign in. Usernames contain 3–32 letters, numbers, or underscores; passwords contain 12–128 characters. Recovery codes can reset a password only after a signed-in user has generated and saved one in Account security. Email verification and social login are not implemented. Sessions last seven days, are stored as token hashes, and are revoked on logout. Logout/login changes clear private frontend cache state.
 
 Write requests require an allowed `Origin` and the session's `X-CSRF-Token`. Configure `CORS_ORIGINS` with the exact frontend origin, including its port; the frontend proxy forwards the origin, CSRF header, and session cookies. Production cookies require HTTPS and `ENVIRONMENT=production`. Authentication attempts have separate limits; the deployment should enforce ingress IP limits, particularly when the backend sits behind a shared proxy.
 
-The supported deployment is still a single backend instance. Account recovery and external hosting/TLS verification are release work before inviting a broad public user base.
+The supported deployment is still a single backend instance. Recovery requires a previously saved code; external hosting/TLS verification remains release work before inviting a broad public user base.
 
 ## Backups and local release
 
@@ -108,9 +110,9 @@ venv/bin/python database_backup.py restore-copy /absolute/path/to/new-backup.sql
 
 The tool refuses existing destinations, uses SQLite's online backup API, checks integrity/foreign keys, and reports table content hashes. Restore to a separate file, stop writers, and deliberately switch the database URL only after verification. Copy backups off the deployment disk; a backup on the same disk does not protect against losing that disk.
 
-The prepared local release runs at **http://localhost:3020** with backend port 8020 and a separate restored 1,369-movie catalog in its Docker volume. The ignored root `.env` selects project `movie-pulse-release` and these ports. `docker compose up -d` resumes it; `docker compose down` stops it without removing the volume. The original development database is preserved. Fresh installations without this local restored copy seed 16 demo titles when provider keys are absent.
+The Compose defaults expose the frontend on localhost port 3000. Existing installations must preserve their database volume during upgrades; avoid volume-removal commands when stopping services. Fresh databases seed 16 clearly labeled demo titles when provider keys are absent.
 
-See [release verification](docs/RELEASE_VERIFICATION.md) for current results and [watchlist mobile screenshot](docs/screenshots/watchlist-mobile.png).
+See [release verification](docs/RELEASE_VERIFICATION.md) for the historical local release results and [the adversarial audit](docs/ADVERSARIAL_AUDIT.md) for the current audit and limitations.
 
 ### Account recovery and operations
 

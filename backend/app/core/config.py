@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "change-me-in-production"
     ADMIN_API_KEY: str = ""
+    ERASURE_LEDGER_PATH: str = ""
+    ERASURE_LEDGER_KEY: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

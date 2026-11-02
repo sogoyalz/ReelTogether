@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { accountError, applyAccount, AuthState, csrfHeaders, useAccount, Watchlist } from '@/lib/account'
@@ -16,13 +17,21 @@ export default function WatchlistPage() {
 }
 
 function AccountForm() {
+  const router = useRouter()
   const client = useQueryClient()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const mutation = useMutation({
     mutationFn: async () => (await api.post<AuthState>(`/api/auth/${mode}`, { username, password })).data,
-    onSuccess: async auth => { await applyAccount(client, auth); setPassword('') },
+    onSuccess: async auth => {
+      await applyAccount(client, auth); setPassword('')
+      const continuation = new URLSearchParams(window.location.hash.slice(1)).get('returnTo')
+      if (continuation) {
+        const target = new URL(continuation, window.location.origin)
+        if (target.origin === window.location.origin && target.pathname === '/movie-night') router.replace(target.pathname + target.search + target.hash)
+      }
+    },
   })
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); mutation.mutate() }
   return <main className="page-shell">

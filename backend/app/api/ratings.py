@@ -1,3 +1,4 @@
+from app.schemas.identifiers import MovieId
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -46,7 +47,7 @@ def get_ratings_for_session(session_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/{session_id}/{movie_id}")
-def remove_rating(session_id: str, movie_id: int, db: Session = Depends(get_db)):
+def remove_rating(session_id: str, movie_id: MovieId, db: Session = Depends(get_db)):
     removed = delete_user_rating(db, session_id, movie_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Rating not found")

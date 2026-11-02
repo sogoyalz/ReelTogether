@@ -1,0 +1,238 @@
+# Standalone production topology; Docker Compose 2.24+ required.
+services:
+  backend:
+    build:
+      context: ./backend
+    env_file:
+    - path: ./backend/.env
+      required: false
+    environment:
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-sqlite:////data/movie_analytics.db}
+      AUTO_CREATE_TABLES: 'false'
+      ENABLE_JOB_WORKER: 'false'
+      ENVIRONMENT: production
+      CORS_ORIGINS: '["${PUBLIC_ORIGIN:?Set an HTTPS PUBLIC_ORIGIN}"]'
+      TRUSTED_HOSTS: '["backend", "localhost", "127.0.0.1"]'
+      REDIS_URL: redis://redis:6379/0
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set a shared proxy secret in the
+        root .env}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY}
+      ENABLE_STARTUP_SYNC: 'false'
+      ENABLE_PERIODIC_SYNC: 'false'
+      ERASURE_LEDGER_PATH: /erasure-ledger/deletions.jsonl
+      ERASURE_LEDGER_KEY: ${ERASURE_LEDGER_KEY:?Set an independent erasure signing
+        key}
+    volumes:
+    - movie-data:/data
+    - erasure-ledger:/erasure-ledger
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready',
+        timeout=5)
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+    depends_on:
+      redis:
+        condition: service_healthy
+  backups:
+    build:
+      context: ./backend
+    command:
+    - python
+    - backup_worker.py
+    environment:
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-sqlite:////data/movie_analytics.db}
+      BACKUP_DIRECTORY: /data/backups
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-reeltogether/backups}
+      BACKUP_S3_ENCRYPTION: ${BACKUP_S3_ENCRYPTION:-AES256}
+      BACKUP_S3_KMS_KEY_ID: ${BACKUP_S3_KMS_KEY_ID:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      ERASURE_LEDGER_PATH: /erasure-ledger/deletions.jsonl
+      ERASURE_LEDGER_KEY: ${ERASURE_LEDGER_KEY:?Set an independent erasure signing
+        key}
+    volumes:
+    - movie-data:/data
+    - erasure-ledger:/erasure-ledger
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - backup_health.py
+      interval: 5m
+      timeout: 10s
+      start_period: 2m
+      retries: 2
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+  jobs:
+    build:
+      context: ./backend
+    command:
+    - python
+    - job_worker.py
+    env_file:
+    - path: ./backend/.env
+      required: false
+    environment:
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-sqlite:////data/movie_analytics.db}
+      ENABLE_PERIODIC_SYNC: ${ENABLE_PERIODIC_SYNC:-false}
+      JOB_HEARTBEAT_FILE: /data/operations/worker.json
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: production
+      ENABLE_STARTUP_SYNC: 'false'
+    volumes:
+    - movie-data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - job_health.py
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+  monitor:
+    build:
+      context: ./backend
+    command:
+    - python
+    - operations_monitor.py
+    environment:
+      DATABASE_URL: ${CONTAINER_DATABASE_URL:-sqlite:////data/movie_analytics.db}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      MONITOR_BACKEND_URL: http://backend:8000/health/ready
+      ERASURE_LEDGER_PATH: /erasure-ledger/deletions.jsonl
+    volumes:
+    - movie-data:/data
+    - erasure-ledger:/erasure-ledger:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      jobs:
+        condition: service_healthy
+      backups:
+        condition: service_started
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      API_BASE_URL: http://backend:8000
+      PROXY_SHARED_SECRET: ${PROXY_SHARED_SECRET:?Set a shared proxy secret in the
+        root .env}
+      TRUSTED_CLIENT_IP_HEADER: x-reeltogether-peer
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    init: true
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+    - /app/.next/cache:rw,nosuid,size=128m,uid=1000,gid=1000
+  redis:
+    image: redis:7.4-alpine
+    command:
+    - redis-server
+    - --appendonly
+    - 'yes'
+    - --maxmemory
+    - 128mb
+    - --maxmemory-policy
+    - noeviction
+    volumes:
+    - admission-data:/data
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    user: 999:999
+  gateway:
+    image: caddy:2-alpine
+    ports:
+    - 80:80
+    - 443:443
+    - 443:443/udp
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?Set PUBLIC_HOST without scheme}
+    volumes:
+    - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+    - gateway-data:/data
+    - gateway-config:/config
+    depends_on:
+      frontend:
+        condition: service_started
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+volumes:
+  movie-data: null
+  admission-data: {}
+  gateway-data: {}
+  gateway-config: {}
+  erasure-ledger: {}

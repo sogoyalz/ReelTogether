@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from app.services.provider_metadata import normalize_metadata
+from app.services.provider_metadata import normalize_metadata, merge_metadata
 
 import json
 import re
+import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
-from math import log1p
+from datetime import date, datetime, timedelta, timezone
+from math import isfinite, log1p
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -14,6 +15,7 @@ from urllib.request import urlopen
 from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.services.cache import ExpiringMap
@@ -79,6 +81,9 @@ def sync_tmdb_catalog(
                 continue
 
             for item in payload.get("results", []):
+                if not isinstance(item, dict):
+                    result.failed_movies += 1
+                    continue
                 movie_id = item.get("id")
                 if not isinstance(movie_id, int) or movie_id in seen_ids:
                     continue
@@ -86,7 +91,7 @@ def sync_tmdb_catalog(
 
                 try:
                     if not include_full_details:
-                        created = _upsert_movie_summary(db, item, genre_map or {}, result, used_slugs=used_slugs)
+                        created = _import_record(db, _upsert_movie_summary, item, genre_map or {}, result, used_slugs=used_slugs)
                         if created:
                             projected_total += 1
                         if target_total_movies is not None and projected_total >= target_total_movies:
@@ -103,10 +108,10 @@ def sync_tmdb_catalog(
                         else None
                     )
                     _DETAIL_CACHE[movie_id] = _build_enrichment_payload(details, providers_payload)
-                    created = _upsert_movie(db, details, result, used_slugs=used_slugs)
+                    created = _import_record(db, _upsert_movie, details, result, used_slugs=used_slugs)
                     if created:
                         projected_total += 1
-                except RuntimeError as exc:
+                except (RuntimeError, ValueError, TypeError, AttributeError, KeyError) as exc:
                     result.failed_movies += 1
                     result.errors.append(f"{item.get('title', movie_id)}: {exc}")
 
@@ -130,6 +135,9 @@ def sync_tmdb_search_results(db: Session, query: str, limit: int = 8) -> TmdbSyn
         return result
 
     for item in payload.get("results", [])[:limit]:
+        if not isinstance(item, dict):
+            result.failed_movies += 1
+            continue
         movie_id = item.get("id")
         if not isinstance(movie_id, int):
             continue
@@ -137,8 +145,8 @@ def sync_tmdb_search_results(db: Session, query: str, limit: int = 8) -> TmdbSyn
             details = _tmdb_get(f"movie/{movie_id}", append_to_response="videos,credits,images")
             providers_payload = _tmdb_get(f"movie/{movie_id}/watch/providers")
             _DETAIL_CACHE[movie_id] = _build_enrichment_payload(details, providers_payload)
-            _upsert_movie(db, details, result)
-        except RuntimeError as exc:
+            _import_record(db, _upsert_movie, details, result)
+        except (RuntimeError, ValueError, TypeError, AttributeError, KeyError) as exc:
             result.failed_movies += 1
             result.errors.append(f"{item.get('title', movie_id)}: {exc}")
 
@@ -149,7 +157,7 @@ def sync_tmdb_search_results(db: Session, query: str, limit: int = 8) -> TmdbSyn
 def get_tmdb_movie_enrichment(movie: Movie, allow_network: bool = False) -> dict | None:
     if movie.enrichment_data:
         return movie.enrichment_data
-    if not settings.tmdb_api_configured or not movie.tmdb_id:
+    if not settings.tmdb_api_configured or (movie.tmdb_id or 0) <= 0:
         return None
 
     # Offline catalog readers must use persisted data consistently across workers.
@@ -172,18 +180,40 @@ def get_tmdb_movie_enrichment(movie: Movie, allow_network: bool = False) -> dict
     return result
 
 
+def _import_record(db, upsert, *args, used_slugs=None):
+    """A malformed record cannot roll back unrelated imports in the batch."""
+    result = args[-1]
+    counts = (result.created_movies, result.updated_movies, result.synced_movies)
+    tentative_slugs = set(used_slugs) if used_slugs is not None else None
+    try:
+        with db.begin_nested():
+            created = upsert(db, *args, used_slugs=tentative_slugs)
+            db.flush()
+    except (SQLAlchemyError, ValueError, TypeError, OverflowError, RuntimeError, AttributeError, KeyError) as exc:
+        result.created_movies, result.updated_movies, result.synced_movies = counts
+        # SQL exceptions can contain full SQL/parameters; keep those out of API errors.
+        raise RuntimeError(f"Invalid provider record ({type(exc).__name__})") from None
+    if used_slugs is not None:
+        used_slugs.update(tentative_slugs)
+    return created
+
+
 def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult, *, used_slugs: set[str] | None = None) -> bool:
     tmdb_id = details.get("id")
     title = (details.get("title") or "").strip()
     release_date = _parse_date(details.get("release_date"))
-    if not isinstance(tmdb_id, int) or not title or release_date is None:
+    if type(tmdb_id) is not int or tmdb_id <= 0 or not title or len(title) > 255 or release_date is None:
         result.failed_movies += 1
         result.errors.append(f"Skipped invalid TMDB payload: {tmdb_id or title or 'unknown'}")
         return False
 
     db.flush()  # Make pending imports visible before resolving IDs and slugs.
-    slug = _slugify(title)
+    slug = _slugify(title) or f"movie-{tmdb_id}"
     existing = db.scalar(select(Movie).where(Movie.tmdb_id == tmdb_id))
+    if existing is not None:
+        from app.services.mock_data import SEEDED_MOVIE_SLUGS
+        if existing.slug in SEEDED_MOVIE_SLUGS and existing.poster_url and "images.unsplash.com" in existing.poster_url and normalize_metadata(existing.provider_metadata).get("catalog_source") != "tmdb":
+            raise RuntimeError("Ambiguous legacy demo identity; reconcile this movie before importing")
     slug = _resolve_slug_conflict(db, slug, tmdb_id, existing, used_slugs=used_slugs)
 
     genres = [genre["name"] for genre in details.get("genres", []) if genre.get("name")]
@@ -201,11 +231,15 @@ def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult, *, used_sl
     )
 
     metadata = normalize_metadata(movie.provider_metadata)
+    if re.fullmatch(r"tt[0-9]{7,10}", str(details.get("imdb_id") or "")):
+        metadata["imdb_id"] = details["imdb_id"]
     if isinstance(details.get("runtime"), int) and details["runtime"] > 0:
         metadata["runtime"] = f"{details['runtime']} min"
     if details.get("original_language"):
         metadata["original_language"] = details["original_language"]
+    metadata["catalog_source"] = "tmdb"
     movie.provider_metadata = metadata
+    movie.provider_metadata = {**normalize_metadata(movie.provider_metadata), "catalog_source": "tmdb", "catalog_verified_at": datetime.now(timezone.utc).isoformat()}
     movie.enrichment_data = _DETAIL_CACHE.get(tmdb_id) or movie.enrichment_data or {}
     movie.tmdb_id = tmdb_id
     movie.slug = slug
@@ -216,7 +250,7 @@ def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult, *, used_sl
     movie.backdrop_url = _image_url(details.get("backdrop_path"))
     movie.overview = details.get("overview") or None
     movie.genres = genres
-    movie.tmdb_popularity = float(details.get("popularity") or 0.0)
+    movie.tmdb_popularity = _popularity(details.get("popularity"))
 
     analytics = next((snapshot for snapshot in movie.analytics_snapshots if snapshot.snapshot_label == "latest"), None)
     if analytics is None:
@@ -237,7 +271,7 @@ def _upsert_movie(db: Session, details: dict, result: TmdbSyncResult, *, used_sl
     from app.services.omdb import fetch_movie_metadata
     metadata = fetch_movie_metadata(movie)
     if metadata:
-        movie.provider_metadata = {**normalize_metadata(movie.provider_metadata), **metadata}
+        movie.provider_metadata = merge_metadata(movie.provider_metadata, metadata)
     result.synced_movies += 1
     return created
 
@@ -253,14 +287,18 @@ def _upsert_movie_summary(
     tmdb_id = item.get("id")
     title = (item.get("title") or "").strip()
     release_date = _parse_date(item.get("release_date"))
-    if not isinstance(tmdb_id, int) or not title or release_date is None:
+    if type(tmdb_id) is not int or tmdb_id <= 0 or not title or len(title) > 255 or release_date is None:
         result.failed_movies += 1
         result.errors.append(f"Skipped invalid TMDB summary payload: {tmdb_id or title or 'unknown'}")
         return False
 
     db.flush()  # Make pending imports visible before resolving IDs and slugs.
-    slug = _slugify(title)
+    slug = _slugify(title) or f"movie-{tmdb_id}"
     existing = db.scalar(select(Movie).where(Movie.tmdb_id == tmdb_id))
+    if existing is not None:
+        from app.services.mock_data import SEEDED_MOVIE_SLUGS
+        if existing.slug in SEEDED_MOVIE_SLUGS and existing.poster_url and "images.unsplash.com" in existing.poster_url and normalize_metadata(existing.provider_metadata).get("catalog_source") != "tmdb":
+            raise RuntimeError("Ambiguous legacy demo identity; reconcile this movie before importing")
     slug = _resolve_slug_conflict(db, slug, tmdb_id, existing, used_slugs=used_slugs)
 
     genres = [
@@ -281,6 +319,7 @@ def _upsert_movie_summary(
         tmdb_popularity=0,
     )
 
+    movie.provider_metadata = {**normalize_metadata(movie.provider_metadata), "catalog_source": "tmdb", "catalog_verified_at": datetime.now(timezone.utc).isoformat()}
     movie.enrichment_data = _DETAIL_CACHE.get(tmdb_id) or movie.enrichment_data or {}
     movie.tmdb_id = tmdb_id
     movie.slug = slug
@@ -291,7 +330,7 @@ def _upsert_movie_summary(
     movie.backdrop_url = _image_url(item.get("backdrop_path"))
     movie.overview = item.get("overview") or None
     movie.genres = genres
-    movie.tmdb_popularity = float(item.get("popularity") or 0.0)
+    movie.tmdb_popularity = _popularity(item.get("popularity"))
 
     analytics = next((snapshot for snapshot in movie.analytics_snapshots if snapshot.snapshot_label == "latest"), None)
     if analytics is None:
@@ -312,7 +351,7 @@ def _upsert_movie_summary(
     from app.services.omdb import fetch_movie_metadata
     metadata = fetch_movie_metadata(movie)
     if metadata:
-        movie.provider_metadata = {**normalize_metadata(movie.provider_metadata), **metadata}
+        movie.provider_metadata = merge_metadata(movie.provider_metadata, metadata)
     result.synced_movies += 1
     return created
 
@@ -320,10 +359,28 @@ def _upsert_movie_summary(
 def _populate_analytics(movie: Movie, analytics: MovieAnalytics, details: dict) -> None:
     if analytics.id is not None:
         trailer = _extract_trailer_url(details.get("videos", {}).get("results", []))
-        if trailer:
+        if trailer and trailer != analytics.trailer_url:
+            metadata = normalize_metadata(movie.provider_metadata)
+            observation = metadata.pop("youtube_observation", None)
+            if analytics.trailer_url:
+                label = f"video:{uuid.uuid4().hex}"
+                previous = MovieAnalytics(snapshot_label=label, **{
+                    column.key: getattr(analytics, column.key)
+                    for column in MovieAnalytics.__table__.columns
+                    if column.key not in {"id", "movie_id", "snapshot_label"}
+                })
+                movie.analytics_snapshots.append(previous)
+                if observation:
+                    archive = dict(metadata.get("youtube_observation_archive") or {})
+                    archive[label] = observation
+                    metadata["youtube_observation_archive"] = archive
+            movie.provider_metadata = metadata
+            analytics.youtube_views = 0
+            analytics.youtube_likes = 0
+            analytics.youtube_comments = 0
             analytics.trailer_url = trailer
         return  # A catalog refresh must not replace observed analytics with estimates.
-    popularity = float(details.get("popularity") or 0.0)
+    popularity = _popularity(details.get("popularity"))
     release_date = movie.release_date
     trailer_url = _extract_trailer_url(details.get("videos", {}).get("results", []))
     days_until_release = (release_date - date.today()).days
@@ -378,12 +435,17 @@ def _tmdb_get(path: str, **params) -> dict:
     url = f"{TMDB_API_BASE}/{path}?{query}"
     try:
         with urlopen(url, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = response.read(4 * 1024 * 1024 + 1)
+            if len(raw) > 4 * 1024 * 1024:
+                raise RuntimeError("TMDB response exceeds the supported size")
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict) or ("results" in payload and not isinstance(payload["results"], list)):
+                raise RuntimeError("Invalid TMDB response shape")
+            return payload
     except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"TMDB request failed for {path} with HTTP {exc.code}: {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"TMDB request failed for {path}: {exc.reason}") from exc
+        raise RuntimeError(f"TMDB request failed with HTTP {exc.code}") from None
+    except (URLError, TimeoutError, ValueError, UnicodeDecodeError):
+        raise RuntimeError("TMDB response is unavailable or invalid") from None
 
 
 def _catalog_size(db: Session) -> int:
@@ -412,19 +474,18 @@ def _resolve_slug_conflict(
     *,
     used_slugs: set[str] | None = None,
 ) -> str:
-    if used_slugs is not None and slug in used_slugs:
-        if existing is not None and existing.slug == slug:
-            return slug
-        return f"{slug}-{tmdb_id}"
-
-    owner = db.scalar(select(Movie).where(Movie.slug == slug))
-    if owner is None:
-        return slug
-    if existing is not None and owner.id == existing.id:
-        return slug
-    if owner.tmdb_id == tmdb_id:
-        return slug
-    return f"{slug}-{tmdb_id}"
+    # Public URLs stay stable when the provider changes a title or translation.
+    if existing is not None:
+        return existing.slug
+    base = slug[:220].rstrip("-")
+    candidate = base
+    suffix = 0
+    while True:
+        owner = db.scalar(select(Movie.id).where(Movie.slug == candidate))
+        if owner is None and (used_slugs is None or candidate not in used_slugs):
+            return candidate
+        suffix += 1
+        candidate = f"{base}-{tmdb_id}" + (f"-{suffix}" if suffix > 1 else "")
 
 
 def _image_url(path: str | None) -> str | None:
@@ -482,12 +543,15 @@ def _build_enrichment_payload(details: dict, providers_payload: dict | None = No
 def _parse_date(raw: str | None) -> date | None:
     if not raw:
         return None
-    return date.fromisoformat(raw)
+    try:
+        return date.fromisoformat(raw)
+    except (ValueError, TypeError):
+        return None
 
 
 def _derive_status(release_date: date) -> str:
     today = date.today()
-    if release_date < today:
+    if release_date <= today:
         return "released"
     if release_date > today + timedelta(days=120):
         return "announced"
@@ -511,3 +575,12 @@ def _extract_trailer_url(videos: list[dict]) -> str | None:
 
 def _slugify(value: str) -> str:
     return re.sub(r"(^-|-$)", "", re.sub(r"[^a-z0-9]+", "-", value.lower()))
+
+
+def _popularity(value):
+    if isinstance(value, bool):
+        raise ValueError("Invalid popularity")
+    number = float(value or 0.0)
+    if not isfinite(number) or number < 0:
+        raise ValueError("Invalid popularity")
+    return number

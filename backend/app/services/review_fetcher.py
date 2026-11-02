@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from app.services.review_identity import review_key
+
 from collections import defaultdict
 from functools import lru_cache
-from datetime import datetime
+from datetime import datetime, timezone
 from statistics import mean
 
 from sqlalchemy.orm import Session
@@ -16,11 +18,11 @@ from app.services.tmdb import _tmdb_get
 
 def fetch_reviews_for_movie(db: Session, movie_id: int) -> list[dict]:
     movie = movie_repository.get_movie_by_id(db, movie_id)
-    if movie is None or not movie.tmdb_id or not settings.tmdb_api_configured:
+    if movie is None or (movie.tmdb_id or 0) <= 0 or not settings.tmdb_api_configured:
         return _critic_aggregate_only(movie) if movie is not None else []
 
     reviews: list[dict] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple] = set()
 
     for page in range(1, 6):
         try:
@@ -39,7 +41,8 @@ def fetch_reviews_for_movie(db: Session, movie_id: int) -> list[dict]:
             if not content or created_at is None:
                 continue
 
-            key = (author.lower(), created_at.date().isoformat())
+            external_id = item.get("id") if isinstance(item.get("id"), str) and len(item["id"]) <= 128 else None
+            key = review_key(author, created_at, "tmdb", external_id)
             if key in seen:
                 continue
             seen.add(key)
@@ -49,6 +52,7 @@ def fetch_reviews_for_movie(db: Session, movie_id: int) -> list[dict]:
                     "content": content,
                     "created_at": created_at,
                     "source": "tmdb",
+                    "source_review_id": external_id,
                 }
             )
 
@@ -144,15 +148,24 @@ def build_sentiment_timeline(reviews: list[dict]) -> dict:
 def refresh_review_sentiments_for_movie(db: Session, movie_id: int) -> dict:
     reviews = fetch_reviews_for_movie(db, movie_id)
     existing = {
-        (item.author.lower(), item.created_at.isoformat(), item.source): item
+        review_key(item.author, item.created_at, item.source, item.source_review_id): item
         for item in movie_repository.list_review_sentiments(db, movie_id)
         if item.analyzed_at is not None
     }
-    pending_reviews = [
-        review
-        for review in reviews
-        if (review["author"].lower(), review["created_at"].isoformat(), review["source"]) not in existing
-    ]
+    pending_reviews = []
+    for review in reviews:
+        external_id = review.get("source_review_id")
+        key = review_key(review["author"], review["created_at"], review["source"], external_id)
+        known = existing.get(key)
+        if known is None and external_id:
+            # Adopt the provider ID on an old timestamp-keyed row without reanalysis.
+            legacy = review_key(review["author"], review["created_at"], review["source"])
+            known = existing.pop(legacy, None)
+            if known is not None:
+                known.source_review_id = external_id
+                existing[key] = known
+        if known is None:
+            pending_reviews.append(review)
     analyzed = analyze_sentiment(pending_reviews)
     created = movie_repository.upsert_review_sentiments(db, movie_id, analyzed)
     stored = movie_repository.list_review_sentiments(db, movie_id)
@@ -185,7 +198,8 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return (parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)).replace(tzinfo=None)
     except ValueError:
         return None
 

@@ -11,10 +11,14 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
 WORKDIR /app
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+RUN mkdir -p /app/.next/cache && chown node:node /app/.next/cache
+USER node
 
 EXPOSE 3000
 

@@ -8,7 +8,7 @@ import { formatReleaseDate } from '@/lib/formatters'
 export function MovieHero({ movie }: { movie: MovieDetail }) {
   return (
     <section className="cinema-detail-hero" aria-labelledby="movie-title">
-      <MovieArtwork src={movie.backdrop_url || movie.poster_url} title={movie.title} backdrop />
+      <MovieArtwork src={movie.backdrop_url || movie.poster_url} title={movie.title} backdrop priority />
       <div className="cinema-detail-poster"><MovieArtwork src={movie.poster_url} title={movie.title} /></div>
       <div className="cinema-detail-copy">
         <span className="cinema-kicker">{movie.status === 'released' ? 'NOW IN THE LIBRARY' : 'ON THE HORIZON'}</span>

@@ -21,6 +21,10 @@ services:
         sync: false
       - key: TRUSTED_HOSTS
         sync: false
+      - key: ERASURE_LEDGER_KEY
+        sync: false
+      - key: ERASURE_LEDGER_PATH
+        value: /data/erasures/deletions.jsonl
       - key: ENVIRONMENT
         value: production
       - key: AUTO_CREATE_TABLES

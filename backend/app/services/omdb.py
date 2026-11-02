@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -16,10 +17,12 @@ _CACHE = ExpiringMap()
 
 
 def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
-    if not settings.omdb_api_configured:
+    if not settings.omdb_api_configured or (movie.tmdb_id or 0) < 0:
         return normalize_metadata(movie.provider_metadata) or None
 
-    cache_key = (movie.title, movie.release_date.year)
+    known_id = normalize_metadata(movie.provider_metadata).get("imdb_id")
+    known_id = known_id if re.fullmatch(r"tt[0-9]{7,10}", known_id or "") else None
+    cache_key = (known_id, movie.title, movie.release_date.year)
     if cache_key in _CACHE:
         return _CACHE[cache_key] or normalize_metadata(movie.provider_metadata) or None
 
@@ -32,6 +35,9 @@ def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
         "tomatoes": "true",
     }
 
+    if known_id:
+        params.pop("t"); params.pop("y"); params["i"] = known_id
+
     try:
         with urlopen(f"{OMDB_API_ENDPOINT}?{urlencode(params)}", timeout=4) as response:
 
@@ -41,6 +47,17 @@ def fetch_movie_metadata(movie: Movie) -> dict[str, str | None] | None:
         return normalize_metadata(movie.provider_metadata) or None
 
     if not isinstance(payload, dict) or payload.get("Response") != "True":
+        _CACHE[cache_key] = None
+        return normalize_metadata(movie.provider_metadata) or None
+
+    # Prefer the canonical IMDb ID supplied by TMDB. Title fallback must match
+    # both title and year; ambiguous same-name movies cannot overwrite metadata.
+    normalize_title = lambda value: re.sub(r"[^\w]", "", str(value).casefold())
+    matches = payload.get("imdbID") == known_id if known_id else (
+        normalize_title(payload.get("Title")) == normalize_title(movie.title)
+        and str(payload.get("Year", ""))[:4] == str(movie.release_date.year)
+    )
+    if not matches:
         _CACHE[cache_key] = None
         return normalize_metadata(movie.provider_metadata) or None
 

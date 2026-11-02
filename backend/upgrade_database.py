@@ -26,7 +26,7 @@ def upgrade(adopt_existing=False):
     if unmanaged:
         if not adopt_existing:
             raise SystemExit("Legacy database detected. Run python upgrade_database.py --adopt-existing once; a backup is created first.")
-        expected = set(Base.metadata.tables) - {"accounts", "login_sessions", "watchlist_entries", "movie_feedback", "movie_nights", "night_members", "night_votes"}
+        expected = {"movies", "movie_analytics", "user_ratings", "review_sentiments", "movie_discussions", "movie_sentiment_snapshots", "movie_prediction_snapshots", "movie_feature_snapshots", "movie_summary_snapshots"}
         if tables != expected:
             raise SystemExit("Legacy schema has unexpected tables; refusing automatic adoption.")
         for name, table in Base.metadata.tables.items():
@@ -35,6 +35,8 @@ def upgrade(adopt_existing=False):
             expected_columns = set(table.columns.keys())
             if name == "movies":
                 expected_columns -= {"enrichment_data", "provider_metadata"}
+            if name == "review_sentiments":
+                expected_columns -= {"source_review_id"}
             actual = {column["name"] for column in inspector.get_columns(name)}
             if actual != expected_columns:
                 raise SystemExit(f"Unexpected columns in {name}; refusing automatic adoption.")

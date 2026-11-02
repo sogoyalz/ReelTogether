@@ -6,7 +6,7 @@ from app.schemas.movie import MovieSummary
 from app.schemas.ratings import RecommendationItemResponse, RecommendationResponse
 from app.services.recommendation_service import explain_recommendations, get_recommendations
 
-from .movies import _serialize_summary_fast as _serialize_summary
+from app.services.movie_serialization import serialize_summary as _serialize_summary
 
 
 router = APIRouter()

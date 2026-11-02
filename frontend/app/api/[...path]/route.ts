@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import { isIP } from 'node:net'
+import { readRequestBody, UploadError } from '@/lib/proxy-body'
 
 const BACKEND_BASE_URL =
   process.env.API_BASE_URL ||
@@ -8,23 +10,29 @@ const BACKEND_BASE_URL =
 
 async function proxy(request: NextRequest, params: { path: string[] }) {
   const search = request.nextUrl.searchParams.toString()
-  const path = params.path.join('/')
+  if (params.path.some(part => part === '.' || part === '..' || part.includes('/') || part.includes(String.fromCharCode(92)) || Array.from(part).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))) {
+    return NextResponse.json({ detail: 'Invalid API path' }, { status: 400, headers: { 'Cache-Control': 'private, no-store' } })
+  }
+  const path = params.path.map(part => encodeURIComponent(part)).join('/')
   const url = `${BACKEND_BASE_URL}/api/${path}${search ? `?${search}` : ''}`
 
   const identity = browserIdentity(request)
+  const peerHeader = process.env.TRUSTED_CLIENT_IP_HEADER
+  const peer = peerHeader ? request.headers.get(peerHeader) || '' : ''
+  const secret = process.env.PROXY_SHARED_SECRET
+  const signedPeer = secret && isIP(peer) ? `${peer}.${createHmac('sha256', secret).update(`peer:${peer}`).digest('hex')}` : null
   const init: RequestInit = {
     method: request.method,
-    headers: { ..._forwardHeaders(request), ...(identity ? { 'x-movie-client': identity } : {}) },
+    headers: { ..._forwardHeaders(request), ...(identity ? { 'x-movie-client': identity } : {}), ...(signedPeer ? { 'x-movie-peer': signedPeer } : {}) },
   }
 
   init.cache = 'no-store'
-  init.signal = AbortSignal.timeout(30_000)
-
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
-    init.body = await request.text()
-  }
+  init.signal = AbortSignal.any([request.signal, AbortSignal.timeout(30_000)])
 
   try {
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      init.body = await readRequestBody(request.body, request.signal)
+    }
     const response = await fetch(url, init)
     const contentType = response.headers.get('content-type') || 'application/json'
     const body = await response.text()
@@ -35,14 +43,15 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
         'Cache-Control': 'private, no-store',
       },
     })
-    for (const header of ['retry-after', 'x-request-id']) {
+    for (const header of ['retry-after', 'x-request-id', 'content-disposition']) {
       const value = response.headers.get(header)
       if (value) outgoing.headers.set(header, value)
     }
     if (identity) outgoing.cookies.set('movie-client', identity, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/' })
     for (const cookie of response.headers.getSetCookie()) outgoing.headers.append('Set-Cookie', cookie)
     return outgoing
-  } catch {
+  } catch (error) {
+    if (error instanceof UploadError) return NextResponse.json({ detail: error.message }, { status: error.status, headers: { 'Cache-Control': 'private, no-store' } })
     return NextResponse.json(
       { detail: 'Backend API is unavailable' },
       { status: 502 },

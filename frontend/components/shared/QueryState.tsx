@@ -8,7 +8,7 @@ export function LoadingState({
   description?: string
 }) {
   return (
-    <div className="panel empty-state">
+    <div className="panel empty-state" role="status"><div className="loading-shapes" aria-hidden="true"><i/><i/><i/></div>
       <h3>{title}</h3>
       <p className="subtle">{description}</p>
     </div>
@@ -18,16 +18,12 @@ export function LoadingState({
 export function ErrorState({
   title = 'Something went wrong',
   description = 'This section could not be loaded right now.',
-}: {
-  title?: string
-  description?: string
-}) {
-  return (
-    <div className="panel empty-state">
-      <h3>{title}</h3>
-      <p className="subtle">{description}</p>
-    </div>
-  )
+  onRetry,
+}: { title?: string; description?: string; onRetry?: () => void }) {
+  return <div className="panel empty-state" role="alert">
+    <h3>{title}</h3><p className="subtle">{description}</p>
+    {onRetry && <button className="cta-button secondary-button" onClick={onRetry}>Try again</button>}
+  </div>
 }
 
 export function EmptyState({

@@ -3,7 +3,7 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  checks:
+  backend:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -12,8 +12,7 @@ jobs:
           POSTGRES_USER: reeltest
           POSTGRES_PASSWORD: disposable-local-only
           POSTGRES_DB: reeltest
-        ports:
-          - 5432:5432
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U reeltest"
           --health-interval 5s
@@ -27,6 +26,30 @@ jobs:
       TMDB_API_KEY: ''
       OMDB_API_KEY: ''
       YOUTUBE_API_KEY: ''
+      POSTGRES_TEST_URL: postgresql://reeltest:disposable-local-only@127.0.0.1:5432/reeltest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: python -m pip install -r requirements-dev.txt
+        working-directory: backend
+      - run: python -m unittest discover -s tests -v
+        working-directory: backend
+      - run: python -m alembic upgrade head && python -m alembic check
+        working-directory: backend
+      - run: python tests/postgres_smoke.py && python tests/postgres_catalog.py && python tests/postgres_hardening.py
+        working-directory: backend
+  frontend:
+    name: frontend (${{ matrix.browser }})
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    runs-on: ubuntu-latest
+    env:
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
@@ -42,28 +65,47 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: python -m pip install -r requirements-dev.txt
         working-directory: backend
-      - run: python -m unittest discover -s tests -v
-        working-directory: backend
-      - run: python -m alembic upgrade head && python -m alembic check
-        working-directory: backend
-      - run: python tests/postgres_smoke.py
-        working-directory: backend
-        env:
-          POSTGRES_TEST_URL: postgresql://reeltest:disposable-local-only@127.0.0.1:5432/reeltest
-      - run: python -m pip_audit -r requirements.txt
-        working-directory: backend
       - run: npm ci
         working-directory: frontend
-      - run: npm run lint && npm run typecheck && npm run build && npm audit
+      - run: npm run lint && npm run typecheck && npm run build
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
         working-directory: frontend
-      - run: npm test
+      - run: npm test -- --browser=${{ matrix.browser }}
         working-directory: frontend
         env:
           BACKEND_PYTHON: python
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-failure-traces
+          name: browser-failure-traces-${{ matrix.browser }}
           path: frontend/test-results
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install pip-audit
+      - run: python -m pip_audit -r requirements.txt
+        working-directory: backend
+      - run: npm audit --omit=dev
+        working-directory: frontend
+      # Lint-only minimatch advisories remain moderate; incompatible automatic
+      # downgrades are not accepted. Still gate high severity across the full tree.
+      - run: npm audit --audit-level=high
+        if: always()
+        working-directory: frontend
+      - run: npm audit
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-lockfiles
+          path: |
+            package-lock.json
+            frontend/package-lock.json

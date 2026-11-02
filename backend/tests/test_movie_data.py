@@ -1,5 +1,5 @@
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from app.models.movie import Movie, MovieAnalytics
 from app.services.catalog_enrichment import get_enrichment
@@ -34,6 +34,7 @@ class MovieDataContractTests(unittest.TestCase):
             for movie, analytics in build_models()
             if movie.slug == "the-batman-part-ii"
         )
+        movie.release_date = date.today() + timedelta(days=365)
 
         contract = build_movie_data_contract(
             movie,
@@ -48,7 +49,7 @@ class MovieDataContractTests(unittest.TestCase):
         self.assertTrue(contract["forecast_is_public"])
         self.assertEqual(contract["field_sources"]["predicted_opening_weekend_usd"], "generated")
 
-    def test_streaming_first_title_suppresses_theatrical_forecast(self) -> None:
+    def test_streaming_availability_does_not_establish_release_type(self) -> None:
         movie = Movie(
             tmdb_id=1,
             slug="war-machine",
@@ -95,7 +96,41 @@ class MovieDataContractTests(unittest.TestCase):
 
         self.assertFalse(contract["forecast_is_public"])
         self.assertEqual(contract["predicted_opening_weekend_usd"], 0.0)
-        self.assertIn("streaming-first", contract["distribution_type"])
+        self.assertEqual(contract["distribution_type"], "unknown")
+        self.assertEqual(contract["forecast_status"], "unavailable")
+        self.assertNotIn('streaming-first', contract['forecast_note'])
+
+    def test_future_streaming_availability_does_not_suppress_forecast(self):
+        movie = Movie(tmdb_id=999, slug='future-fixture', title='Future fixture',
+                      release_date=date.today() + timedelta(days=30), status='released', genres=[])
+        for studios in ([], ['Independent Studio']):
+            with self.subTest(studios=studios):
+                contract = build_movie_data_contract(movie,
+                    enrichment={'streaming_on': ['Netflix'], 'studios': studios}, opening=10_000_000)
+                self.assertEqual(contract['distribution_type'], 'unknown')
+                self.assertEqual(contract['forecast_status'], 'modeled')
+                self.assertEqual(contract['predicted_opening_weekend_usd'], 10_000_000)
+
+    def test_release_distribution_requires_explicit_provenance(self):
+        movie = Movie(tmdb_id=999, slug='release-fixture', title='Release fixture',
+                      release_date=date.today() + timedelta(days=30), status='upcoming', genres=[])
+        evidence = {'type': 'streaming-first', 'source_url': 'https://example.org/release',
+                    'verified_at': '2026-10-31T12:00:00Z'}
+        for value in (None, 'streaming-first', {'type': []}, {'type': 'streaming-first'},
+                      {**evidence, 'source_url': 'javascript:invalid'},
+                      {**evidence, 'verified_at': 'invalid'}):
+            with self.subTest(value=value):
+                movie.provider_metadata = {'release_distribution': value}
+                self.assertEqual(build_movie_data_contract(movie)['distribution_type'], 'unknown')
+        movie.provider_metadata = {'release_distribution': evidence}
+        contract = build_movie_data_contract(movie, opening=10_000_000)
+        self.assertEqual(contract['distribution_type'], 'streaming-first')
+        self.assertEqual(contract['forecast_status'], 'suppressed')
+        self.assertFalse(contract['forecast_is_public'])
+        # Stored theatrical actuals override a conflicting release label.
+        contract = build_movie_data_contract(movie, omdb_metadata={'box_office': '$10,000,000'})
+        self.assertEqual(contract['distribution_type'], 'theatrical')
+        self.assertEqual(contract['forecast_status'], 'actuals_available')
 
 
 if __name__ == "__main__":

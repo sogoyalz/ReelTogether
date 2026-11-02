@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from app.models.movie import Movie, MovieAnalytics
 from app.services.mock_data import SEEDED_MOVIE_SLUGS
 from app.services.provider_metadata import normalize_metadata
-from app.services.prediction_model import is_non_theatrical_release, normalize_public_forecast
+from app.services.prediction_model import normalize_public_forecast, release_distribution_type
 
 FieldSource = str
 
@@ -42,11 +42,7 @@ def build_movie_data_contract(
         domestic_low=domestic_low,
         domestic_high=domestic_high,
     )
-    distribution_type = (
-        "streaming-first"
-        if is_non_theatrical_release(movie, enrichment=enrichment, box_office=omdb_metadata.get("box_office"))
-        else "theatrical"
-    )
+    distribution_type = release_distribution_type(movie, box_office=omdb_metadata.get("box_office"))
 
     field_sources: dict[str, FieldSource] = {
         "title": catalog_source,
@@ -86,7 +82,8 @@ def build_movie_data_contract(
         "predicted_domestic_total_usd": "generated" if forecast["forecast_is_public"] and forecast["predicted_domestic_total_usd"] else "missing",
     }
 
-    if normalize_metadata(movie.provider_metadata).get("youtube_observation"):
+    observation = normalize_metadata(movie.provider_metadata).get("youtube_observation") or {}
+    if analytics and observation.get("source_url") == analytics.trailer_url and analytics.trailer_url:
         for field in ("trailer_views", "youtube_likes", "youtube_comments"):
             field_sources[field] = "sourced"
 
@@ -126,6 +123,10 @@ def derive_canonical_status(movie: Movie, today: date | None = None) -> str:
 
 
 def _infer_catalog_source(movie: Movie) -> FieldSource:
+    if (movie.tmdb_id or 0) < 0 or normalize_metadata(movie.provider_metadata).get("catalog_source") == "demo":
+        return "generated"
+    if normalize_metadata(movie.provider_metadata).get("catalog_source") == "tmdb":
+        return "sourced"
     if movie.poster_url and "image.tmdb.org" in movie.poster_url:
         return "sourced"
     if movie.backdrop_url and "image.tmdb.org" in movie.backdrop_url:
@@ -139,7 +140,8 @@ def _enrichment_source(movie: Movie, enrichment: dict, field_name: str) -> Field
     value = enrichment.get(field_name)
     if value in (None, "", []):
         return "missing"
-    return "generated" if movie.slug in SEEDED_MOVIE_SLUGS else "sourced"
+    stored = movie.enrichment_data if isinstance(movie.enrichment_data, dict) else {}
+    return _infer_catalog_source(movie) if stored.get(field_name) not in (None, "", []) else "generated"
 
 
 def _build_warnings(
@@ -168,7 +170,7 @@ def _build_warnings(
         (analytics and analytics.predicted_opening_weekend_usd > 0)
         or (analytics and analytics.predicted_domestic_total_usd > 0)
     ):
-        warnings.append("The title appears to be streaming-first, so theatrical box office forecasts were suppressed.")
+        warnings.append("Stored release evidence identifies a streaming-first premiere, so theatrical box office forecasts were suppressed.")
     if not forecast["forecast_is_public"] and omdb_metadata.get("box_office") is None:
         warnings.append("No sourced theatrical revenue evidence is available for this title.")
     if analytics and any(
@@ -212,7 +214,15 @@ def _classify_data_quality(
 
 
 def _last_verified_at(movie: Movie, analytics: MovieAnalytics | None) -> datetime | None:
-    candidates = [movie.updated_at, movie.created_at]
-    if analytics is not None:
-        candidates.extend([analytics.last_updated])
-    return max((candidate.replace(tzinfo=timezone.utc) if candidate.tzinfo is None else candidate for candidate in candidates if candidate is not None), default=None)
+    metadata = normalize_metadata(movie.provider_metadata)
+    observation = metadata.get("youtube_observation") or {}
+    candidates = []
+    for raw in (metadata.get("catalog_verified_at"), observation.get("verified_at")):
+        if not isinstance(raw, str):
+            continue
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            candidates.append(parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed)
+        except ValueError:
+            continue
+    return max(candidates, default=None)

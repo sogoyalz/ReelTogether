@@ -1,6 +1,7 @@
 """Database-backed, at-least-once maintenance queue with fenced leases."""
 from datetime import datetime, timedelta, timezone
 import uuid
+import re
 from sqlalchemy import select, update, func, or_
 from sqlalchemy.exc import IntegrityError
 from app.db.session import SessionLocal
@@ -54,7 +55,7 @@ class JobRegistry:
         return job
 
     def enqueue(self, name):
-        if name not in JOB_NAMES:
+        if name not in JOB_NAMES and not re.fullmatch(r"(?:youtube-refresh|sentiment-refresh):[1-9][0-9]{0,17}", name):
             raise ValueError("Unknown maintenance operation")
         with self.session_factory() as db:
             self._lock(db)
@@ -83,6 +84,9 @@ class JobRegistry:
         with self.session_factory() as db:
             self._lock(db)
             now = utcnow()
+            if db.scalar(select(BackgroundJob.id).where(BackgroundJob.status == "running", BackgroundJob.lease_until > now).limit(1)):
+                db.commit()
+                return None
             jobs = list(db.scalars(select(BackgroundJob).where(or_(
                 (BackgroundJob.status == "queued") & (BackgroundJob.available_at <= now),
                 (BackgroundJob.status == "running") & (BackgroundJob.lease_until <= now),

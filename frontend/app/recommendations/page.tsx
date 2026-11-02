@@ -118,7 +118,7 @@ function MovieAssistant({ auth }: { auth: AuthState | null }) {
     <p className="meta"><Link href="/movie-night">Watching with friends? Plan a Movie Night →</Link></p>
     <header className="match-heading">
       <div className="match-hero-copy"><p className="match-eyebrow">MOVIE MATCH · MADE FOR YOUR TASTE</p><h1>Less scrolling.<br /><em>More cinema.</em></h1><p className="subtle">A favourite film. A genre. A little inspiration.<br />Start with what you love. Find what to watch next.</p><a href="#movie-message" className="match-hero-link" onClick={event => { event.preventDefault(); document.getElementById('movie-message')?.focus() }}>Find your next film <ArrowUp size={16} aria-hidden="true" /></a></div>
-      <div className="match-poster-gallery" aria-label="Explore movies from the catalog">
+      <div className="match-poster-gallery" role="group" aria-label="Explore movies from the catalog">
         {spotlight.data?.slice(0, 5).map(movie => <Link key={movie.id} href={`/movies/${movie.slug}`} className="match-hero-poster" aria-label={`Explore ${movie.title}`}><MovieArtwork src={movie.poster_url} title={movie.title} /><span>{movie.title}</span></Link>)}
         {!spotlight.data?.length && <div className="match-poster-placeholder"><MessageCircle size={48} /><span>There’s a film for every mood.</span></div>}
       </div>
@@ -128,7 +128,7 @@ function MovieAssistant({ auth }: { auth: AuthState | null }) {
 
       <section className="match-main" aria-label="Movie recommendation chat">
         <div className={`panel match-chat ${messages.length || busy ? 'match-chat-active' : 'match-chat-empty'}`}>
-          <div className="match-chat-heading"><h2>What are you in the mood for?</h2><button className="match-reset" onClick={reset} disabled={busy} aria-label="Start a new chat"><RotateCcw size={15} /> Start over</button></div>
+          <div className="match-chat-heading"><h2>What are you in the mood for?</h2><button className="match-reset" onClick={reset} disabled={busy} aria-label="Start over: start a new chat"><RotateCcw size={15} /> Start over</button></div>
           <p className="meta">{useAI ? 'Describe what you feel like watching. Review the interpreted filters before refining your shortlist.' : 'Try a genre or the title of a film you love. We’ll take it from there.'}</p>
 
           <div className="match-conversation" role="log" aria-label="Conversation" aria-live="polite">
@@ -136,7 +136,7 @@ function MovieAssistant({ auth }: { auth: AuthState | null }) {
             {busy && <p className="match-thinking" role="status"><span className="thinking-dots" aria-hidden="true"><i /><i /><i /></span>Finding movies in the catalog…</p>}
             <div ref={conversationEnd} />
           </div>
-          <div className="match-prompts">{[{ label: 'Make me laugh', query: 'Recommend a comedy', icon: Laugh, tone: 'amber' }, { label: 'Explore other worlds', query: 'Science fiction', icon: Rocket, tone: 'violet' }, { label: 'A little romance', query: 'Romance', icon: Heart, tone: 'rose' }, { label: 'Skip the scares', query: 'No horror', icon: ShieldCheck, tone: 'teal' }].map(({ label, query, icon: Icon, tone }) => <button className={`mood-chip mood-${tone}`} key={label} aria-label={query} disabled={busy || saving || profileUnavailable} onClick={() => send(query)}><Icon size={15} aria-hidden="true" />{label}</button>)}</div>
+          <div className="match-prompts">{[{ label: 'Make me laugh', query: 'Recommend a comedy', icon: Laugh, tone: 'amber' }, { label: 'Explore other worlds', query: 'Science fiction', icon: Rocket, tone: 'violet' }, { label: 'A little romance', query: 'Romance', icon: Heart, tone: 'rose' }, { label: 'Skip the scares', query: 'No horror', icon: ShieldCheck, tone: 'teal' }].map(({ label, query, icon: Icon, tone }) => <button className={`mood-chip mood-${tone}`} key={label} disabled={busy || saving || profileUnavailable} onClick={() => send(query)}><Icon size={15} aria-hidden="true" />{label}</button>)}</div>
           <form className="match-composer" onSubmit={submit}><label className="sr-only" htmlFor="movie-message">Message Movie Match</label><input id="movie-message" autoComplete="off" value={message} onChange={event => setMessage(event.target.value)} maxLength={500} placeholder="e.g. Science fiction, without horror" disabled={busy} /><button className="cta-button" aria-label="Send message" disabled={busy || saving || !message.trim() || profileUnavailable}><ArrowUp size={20} /></button></form>
           <div className="match-ai-setting">
             <label><input type="checkbox" checked={useAI} disabled={busy || !auth || !coverage.data?.ai_available} onChange={event => setUseAI(event.target.checked)} /> Interpret my request</label>

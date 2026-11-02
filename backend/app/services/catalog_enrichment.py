@@ -255,6 +255,12 @@ CATALOG_ENRICHMENTS: dict[str, dict] = {
 def get_enrichment(movie: Movie, allow_network: bool = False) -> dict:
     base = CATALOG_ENRICHMENTS.get(movie.slug, {})
     tmdb = get_tmdb_movie_enrichment(movie, allow_network=allow_network) or {}
+    tmdb = dict(tmdb) if isinstance(tmdb, dict) else {}
+    for key in ("studios", "streaming_on", "cast", "directors", "writers", "backdrops"):
+        value = tmdb.get(key)
+        tmdb[key] = [item for item in value if isinstance(item, str) and item] if isinstance(value, list) else []
+    if not isinstance(tmdb.get("franchise"), str):
+        tmdb["franchise"] = None
 
     franchise = tmdb.get("franchise") or base.get("franchise")
     studios = tmdb.get("studios") or base.get("studios", [])

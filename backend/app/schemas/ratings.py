@@ -1,3 +1,4 @@
+from app.schemas.identifiers import MovieId
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -7,7 +8,7 @@ from app.schemas.movie import MovieSummary
 
 class UserRatingCreate(BaseModel):
     session_id: str = Field(min_length=1, max_length=255)
-    movie_id: int
+    movie_id: MovieId
     rating: float = Field(ge=1.0, le=5.0)
 
 

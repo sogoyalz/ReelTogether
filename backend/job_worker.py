@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from app.core.config import settings
 from app.services.background_jobs import job_registry
+from app.services.job_fencing import fenced_job
 
 logger=logging.getLogger("maintenance")
 
@@ -27,17 +28,27 @@ def write_heartbeat():
 
 def execute_job(registry, job, available_handlers=None):
     stop=threading.Event()
+    lost=threading.Event()
     def renew():
         while not stop.wait(20):
             try:
-                if not registry.heartbeat(job.id,job.lease_token):return
+                if not registry.heartbeat(job.id,job.lease_token):
+                    lost.set(); return
                 write_heartbeat()
             except Exception:
+                lost.set()
                 logger.error("Worker heartbeat failed")
+                return
     keeper=threading.Thread(target=renew,daemon=True);keeper.start()
     started=time.monotonic()
     try:
-        result=(available_handlers or handlers())[job.name]() or {}
+        with fenced_job(job, lost):
+            registered = available_handlers or handlers()
+            if job.name in registered:
+                result = registered[job.name]() or {}
+            else:
+                from app.services.startup_jobs import run_targeted_refresh
+                result = run_targeted_refresh(job.name)
         if not isinstance(result,dict):raise ValueError("Invalid job result")
         result["elapsed_ms"]=int((time.monotonic()-started)*1000)
         if len(json.dumps(result))>32768:result={"summary":"Completed; detailed result exceeds storage limit"}

@@ -1,17 +1,15 @@
 'use client'
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { isAxiosError } from 'axios'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Users, Copy, Check, Minus, Ban } from 'lucide-react'
+import { useRoom, type Room } from '@/lib/movie-night'
 import { api, movieApi } from '@/lib/api'
 import { useAccount, csrfHeaders, accountError, type AuthState } from '@/lib/account'
 import { MovieArtwork } from '@/components/shared/MovieArtwork'
 import { WatchlistButton } from '@/components/movies/WatchlistButton'
 
-type Film = { id:number; slug:string; title:string; poster_url:string|null; year:number; genres:string[] }
-type Result = { movie_id:number; yes:number; vetoes:number; eligible:boolean; top_match:boolean; reason:string }
-type Room = { id:string; title:string; state:string; round_id:number; is_host:boolean; expired:boolean; expires_at:string; winner_id:number|null; members:{account_id:number;username:string;is_host:boolean;complete:boolean}[]; preferences:{genres:string[];favorites:number[]}; favorite_movies:{id:number;title:string}[]; movies:Film[]; my_votes:Record<string,string>; results:Result[] }
 const genres=['Action','Adventure','Animation','Comedy','Crime','Documentary','Drama','Family','Fantasy','History','Horror','Music','Mystery','Romance','Science Fiction','Thriller','War','Western']
 
 function subscribeUrl(callback:()=>void){window.addEventListener('popstate',callback);window.addEventListener('hashchange',callback);return()=>{window.removeEventListener('popstate',callback);window.removeEventListener('hashchange',callback)}}
@@ -24,6 +22,8 @@ export default function MovieNightPage(){
 }
 function NightWorkspace({auth}:{auth:AuthState|null}){
   const client=useQueryClient()
+  const mounted=useRef(true)
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
   const location=useSyncExternalStore(subscribeUrl,()=>window.location.search+window.location.hash,()=> '')
   const roomId=new URLSearchParams(location.split('#')[0]).get('room')??''
   const invite=new URLSearchParams(location.split('#')[1]??'').get('invite')??''
@@ -33,21 +33,31 @@ function NightWorkspace({auth}:{auth:AuthState|null}){
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const rooms=useQuery({queryKey:['movie-nights',auth?.user.id],enabled:!!auth,queryFn:async()=>(await api.get<{items:{id:string;title:string;state:string;expired:boolean}[]}>('/api/movie-nights')).data})
-  const room=useQuery({queryKey:['movie-night',auth?.user.id,roomId],enabled:!!auth&&!!roomId,queryFn:async()=>(await api.get<Room>(`/api/movie-nights/${roomId}`)).data,retry:false,refetchInterval:q=>q.state.error||q.state.data?.expired||q.state.data?.state==='selected'?false:3000})
-  function open(id:string){setShare('');setNotice('');window.history.replaceState(null,'',id?`/movie-night?room=${encodeURIComponent(id)}`:'/movie-night');window.dispatchEvent(new PopStateEvent('popstate'))}
+  const room=useRoom(auth?.user.id,roomId)
+  function open(id:string){setShare('');setNotice('');setError('');window.history.replaceState(null,'',id?`/movie-night?room=${encodeURIComponent(id)}`:'/movie-night');window.dispatchEvent(new PopStateEvent('popstate'))}
   function shareToken(token:string){setShare(`${window.location.origin}/movie-night#invite=${encodeURIComponent(token)}`)}
   async function act(path:string,payload:unknown={},method:'post'|'put'='post'){
     if(!auth||busy)return
+    const actionLocation=window.location.href
+    const stillCurrent=()=>mounted.current&&window.location.href===actionLocation
     setBusy(true);setError('');setNotice('')
-    try{const response=await api[method](path,payload,{headers:csrfHeaders(auth)});await client.invalidateQueries({queryKey:['movie-night']});await client.invalidateQueries({queryKey:['movie-nights']});return response.data}
-    catch(e){setError(accountError(e));if(isAxiosError(e)&&e.response?.status===409)await client.invalidateQueries({queryKey:['movie-night']})}finally{setBusy(false)}
+    try{
+      const response=await api[method](path,payload,{headers:csrfHeaders(auth)})
+      await client.invalidateQueries({queryKey:['movie-night']})
+      await client.invalidateQueries({queryKey:['movie-nights']})
+      // A completed write still refreshes data, but its receipt belongs to its original view.
+      return stillCurrent()?response.data:undefined
+    }catch(e){
+      if(stillCurrent())setError(accountError(e))
+      if(isAxiosError(e)&&e.response?.status===409)await client.invalidateQueries({queryKey:['movie-night']})
+    }finally{if(mounted.current)setBusy(false)}
   }
   const data=room.data
   const frozen=busy||!!data?.expired
   const complete=data?.members.every(m=>m.complete)
   return <main className="page-shell night-page">
     <header className="night-heading"><div><p className="eyebrow"><Users size={16}/> MOVIE NIGHT</p><h1>Good films.<br/><em>Better company.</em></h1><p className="subtle">Pick something everyone wants to watch. Invite, vote privately, and reveal your group’s favourites.</p></div><div className="night-steps"><span>01 · Gather your people</span><span>02 · Vote without the pressure</span><span>03 · Make it a movie night</span></div></header>
-    {!auth?<section className="panel"><h2>Bring your people together</h2><p>Sign in to create or join a room. If you have an invitation, return to this link after signing in.</p><Link className="cta-button" href="/watchlist">Sign in to join</Link></section>:<>
+    {!auth?<section className="panel"><h2>Bring your people together</h2><p>Sign in to create or join a room. Your invitation will be ready after signing in.</p><Link className="cta-button" href={`/watchlist#returnTo=${encodeURIComponent(`/movie-night${location}`)}`}>Sign in to join</Link></section>:<>
       {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
       {invite&&<section className="panel night-invite"><h2>You’re invited</h2><p>Join with your account. Invitations expire after 24 hours; new guests cannot join once voting starts.</p><button className="cta-button" disabled={busy} onClick={async()=>{const result=await act('/api/movie-nights/join',{token:invite});if(result)open(result.id)}}>Join movie night</button></section>}
       {!roomId&&!invite&&<div className="night-start"><section className="panel"><h2>Host a movie night</h2><form className="account-form" onSubmit={async e=>{e.preventDefault();const result=await act('/api/movie-nights',{title});if(result){open(result.id);shareToken(result.invite_token)}}}><label htmlFor="night-title">Room name</label><input className="search-input" id="night-title" value={title} onChange={e=>setTitle(e.target.value)} required maxLength={80}/><button className="cta-button" disabled={busy}>Create room</button></form><p className="meta">2–8 people · Eight-film shortlist · 24-hour room</p></section><section className="panel"><h2>Your rooms</h2>{rooms.isPending&&<p role="status">Loading rooms…</p>}{rooms.isError&&<p role="alert">Could not load your rooms. <button onClick={()=>rooms.refetch()}>Retry</button></p>}{rooms.data?.items.length===0&&<p className="subtle">Your next movie night starts here.</p>}{rooms.data?.items.map(r=><button className="night-room-link" key={r.id} onClick={()=>open(r.id)}>{r.title}<span>{r.expired?'Expired':r.state}</span></button>)}</section></div>}

@@ -61,7 +61,7 @@ function CompareWorkspace() {
   return (
     <main className="page-shell">
       <section className="hero-panel">
-        <span className="eyebrow">Comparison Tool</span>
+        <span className="eyebrow">SIDE BY SIDE</span>
         <h1 className="hero-title" style={{ fontSize: 'clamp(2.4rem, 6vw, 4.6rem)' }}>
           Put movie hype head to head.
         </h1>
@@ -76,7 +76,9 @@ function CompareWorkspace() {
           </Link>
         </div>
         <div style={{ marginTop: 22 }}>
+          <label htmlFor="compare-search">Find movies to compare</label>
           <input
+            id="compare-search"
             className="search-input"
             onChange={(event) => { setPickerQuery(event.target.value); setPickerPage(1) }}
             placeholder="Filter compare picker by title, franchise, or studio"
@@ -88,6 +90,7 @@ function CompareWorkspace() {
             <button
               className="cta-button"
               key={movie.id}
+              aria-pressed={selectedSet.has(movie.id)}
               onClick={() => toggleId(movie.id)}
               style={{
                 opacity: selectedSet.has(movie.id) ? 1 : 0.55,

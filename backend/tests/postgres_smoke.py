@@ -35,6 +35,13 @@ with TestClient(app, base_url='http://localhost', headers={'Origin':'http://loca
         assert response.status_code == status, (response.status_code, response.text)
         return response.json()
     checked(client.get('/health/ready'))
+    # Integer parameters must fit PostgreSQL's Integer columns before binding.
+    # SQLite accepts wider integers, so this needs coverage on both databases.
+    for invalid_id in (2 ** 31, -(2 ** 31) - 1, 2 ** 63):
+        checked(client.get(f'/api/movies/{invalid_id}'), 422)
+        checked(client.get(f'/api/analytics/movie/{invalid_id}'), 422)
+        checked(client.get(f'/api/analytics/compare?movie_ids={movie_id},{invalid_id}'), 422)
+    checked(client.get('/api/movies/2147483647'), 404)
     assert checked(client.get('/api/movies/browse'))['total'] > 0
     account = checked(client.post('/api/auth/register', json={'username':'pg_'+uuid.uuid4().hex[:12],
                                                             'password':'disposable-test-password-123'}), 201)

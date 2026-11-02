@@ -1,3 +1,4 @@
+import { expectReadableText } from './contrast'
 import { expect, test } from '@playwright/test'
 
 test('guest favourites, follow-up constraints, and different picks', async ({ page }) => {
@@ -5,6 +6,7 @@ test('guest favourites, follow-up constraints, and different picks', async ({ pa
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/recommendations')
   await page.getByLabel('Favourite movies').fill('Chat Movie 00')
+  await expectReadableText(page.getByRole('button', { name: 'Add Chat Movie 00 (2020)' }))
   await page.getByRole('button', { name: 'Add Chat Movie 00 (2020)' }).click()
   await page.getByLabel('Message Movie Match').fill('English science fiction under two hours')
   await page.getByRole('button', { name: 'Send message' }).click()
@@ -34,7 +36,7 @@ test('unknown requests clarify and impossible filters return no movies', async (
   await page.getByRole('button', { name: 'Send message' }).click()
   await expect(page.getByRole('log').getByText(/No more catalog movies/)).toBeVisible()
   await expect(page.getByRole('region', { name: 'Recommended movies' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Start a new chat' }).click()
+  await page.getByRole('button', { name: 'Start over: start a new chat' }).click()
   await expect(page.getByLabel('Language', { exact: true })).toHaveValue('')
 })
 
@@ -47,6 +49,7 @@ test('account taste survives reload and dismissal can be undone', async ({ page 
   await expect(page.getByRole('heading', { name: 'Your watchlist', exact: true })).toBeVisible()
   await page.goto('/recommendations')
   await page.getByLabel('Favourite movies').fill('Chat Movie 00')
+  await expectReadableText(page.getByRole('button', { name: 'Add Chat Movie 00 (2020)' }))
   await page.getByRole('button', { name: 'Add Chat Movie 00 (2020)' }).click()
   await expect(page.getByRole('button', { name: 'Remove favourite Chat Movie 00' })).toBeVisible()
   await page.reload()

@@ -1,4 +1,6 @@
 .env.local
+.env*
+.git
 node_modules
 .next
 npm-debug.log

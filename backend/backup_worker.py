@@ -16,6 +16,20 @@ logger = logging.getLogger("backups")
 
 
 def backup_once(source: Path, directory: Path):
+    if settings.ERASURE_LEDGER_PATH or settings.is_production:
+        from app.db.session import SessionLocal
+        from app.services.erasure_ledger import publish_pending, receipt_keys
+        from app.models.account import AccountErasure
+        from sqlalchemy import select
+        with SessionLocal() as db:
+            while publish_pending(db): pass
+            path = Path(settings.ERASURE_LEDGER_PATH)
+            exported = set(db.scalars(select(AccountErasure.erasure_key).where(AccountErasure.exported_at.is_not(None))))
+            if path.exists():
+                if not exported.issubset(receipt_keys(path, settings.ERASURE_LEDGER_KEY)):
+                    raise RuntimeError('Independent erasure ledger is incomplete')
+            elif exported:
+                raise RuntimeError('Independent erasure ledger is missing')
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     name = "catalog-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f") + ".sqlite"
     backup = directory / name
@@ -31,7 +45,7 @@ def backup_once(source: Path, directory: Path):
     pending.chmod(0o600)
     pending.replace(directory / "status.json")
     # Retain only files created by this worker, after a verified replacement exists.
-    for old in sorted(directory.glob("catalog-*.sqlite"))[:-14]:
+    for old in sorted(directory.glob("catalog-*.sqlite"))[:-max(2,int(os.getenv('BACKUP_KEEP_COUNT','14')))]:
         old.unlink()
     publish_backup(backup, directory)
     return status

@@ -30,6 +30,9 @@ SessionLocal = sessionmaker(
     future=True,
 )
 
+# Install lease fencing in API, workers and supported ORM maintenance CLIs.
+from app.services import job_fencing as _job_fencing  # noqa: E402,F401
+
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()

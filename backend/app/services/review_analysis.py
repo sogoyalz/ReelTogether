@@ -80,7 +80,7 @@ def analyze_review_landscape(
         *[theme for theme in critics.top_themes if theme not in audience.top_themes][:2],
         *[theme for theme in audience.top_themes if theme not in critics.top_themes][:2],
     ]
-    alignment_score = round(max(0.0, 1 - abs(critics.sentiment_score - audience.sentiment_score)), 2)
+    alignment_score = round(max(0.0, 1 - abs(critics.sentiment_score - audience.sentiment_score)), 2) if critics.item_count and audience.item_count else None
 
     theme_signals = []
     for theme in _merge_preserving_order(critics.top_themes + audience.top_themes):
@@ -222,7 +222,7 @@ def _top_reasons(items: list[MovieDiscussion], target_sentiment: str, fallback: 
             continue
         counter.update(_extract_themes(f"{item.title} {item.body}"))
     if not counter:
-        return fallback[:3]
+        return []
     return [theme for theme, _ in counter.most_common(3)]
 
 

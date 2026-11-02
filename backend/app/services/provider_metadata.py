@@ -13,6 +13,15 @@ def metadata_text(value):
     return text if text and text.casefold() not in {"n/a", "nan", "none", "null", "inf", "infinity", "-inf", "-infinity"} else None
 
 
+def merge_metadata(existing, incoming):
+    """A partial refresh cannot erase a previously known provider fact."""
+    result = normalize_metadata(existing)
+    for key, value in normalize_metadata(incoming).items():
+        if value not in (None, "", {}, []):
+            result[key] = value
+    return result
+
+
 def normalize_metadata(value):
     if not isinstance(value, dict):
         return {}

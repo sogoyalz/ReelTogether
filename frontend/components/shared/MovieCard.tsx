@@ -2,9 +2,9 @@ import Link from 'next/link'
 import type { MovieSummary } from '@/lib/api'
 import { MovieArtwork } from './MovieArtwork'
 
-export function MovieCard({ movie }: { movie: MovieSummary }) {
+export function MovieCard({ movie, index, wide = false }: { movie: MovieSummary; index?: number; wide?: boolean }) {
   return <Link className="movie-card film-card" href={`/movies/${movie.slug}`}>
-    <div className="film-card-image"><MovieArtwork src={movie.poster_url} title={movie.title} /><span className="film-card-open">Explore movie ↗</span></div>
+    <div className="film-card-image"><MovieArtwork src={wide ? movie.backdrop_url || movie.poster_url : movie.poster_url} title={movie.title} />{index !== undefined && <span className="poster-rank" aria-hidden="true">{String(index + 1).padStart(2,'0')}</span>}<span className="film-card-open">Explore movie ↗</span></div>
     <div className="movie-card-body">
       <div className="film-card-meta"><span>{movie.release_date.slice(0, 4)}</span><span>{movie.imdb_rating ? `IMDb ${movie.imdb_rating}` : movie.status === 'released' ? 'Released' : 'Coming soon'}</span></div>
       <h3>{movie.title}</h3>

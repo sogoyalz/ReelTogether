@@ -46,9 +46,9 @@ class CatalogBrowseResult:
 
 
 def browse_catalog(db: Session, filters: CatalogBrowseFilters) -> CatalogBrowseResult:
-    if db.get_bind().dialect.name == "sqlite":
-        from app.services.catalog_sql import browse_sqlite
-        return browse_sqlite(db, filters)
+    if db.get_bind().dialect.name in {"sqlite", "postgresql"}:
+        from app.services.catalog_sql import browse_sql
+        return browse_sql(db, filters)
     # Compatibility path for other dialects; ORM objects are never cached globally.
     return _build_browse_result(db, filters)
 

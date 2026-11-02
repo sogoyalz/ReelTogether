@@ -1,5 +1,6 @@
 from app.services.provider_metadata import normalize_metadata
 """Read-only analysis of the currently stored observations."""
+from app.schemas.identifiers import MovieId
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -18,7 +19,7 @@ router = APIRouter()
 
 
 @router.get("/movie/{movie_id}", response_model=MovieAIOverviewResponse)
-def get_movie_ai_overview(movie_id: int, db: Session = Depends(get_db)):
+def get_movie_ai_overview(movie_id: MovieId, db: Session = Depends(get_db)):
     movie = movie_repository.get_movie_by_id(db, movie_id)
     if movie is None:
         raise HTTPException(status_code=404, detail="Movie not found")

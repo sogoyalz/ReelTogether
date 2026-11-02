@@ -133,3 +133,20 @@ def _run_ai_refresh() -> dict:
             "review_sentiments_refreshed": review_refreshes,
             "review_sentiment_failures": review_failures,
         }
+
+
+def run_targeted_refresh(name):
+    """Targeted work shares the global catalog lease with full refresh jobs."""
+    import re
+    from dataclasses import asdict
+    from app.services.youtube_analytics import refresh_movie_analytics
+    match = re.fullmatch(r"(youtube-refresh|sentiment-refresh):([1-9][0-9]{0,17})", name)
+    if match is None:
+        raise ValueError("Unknown maintenance job")
+    movie_id = int(match[2])
+    with SessionLocal() as db:
+        if db.get(Movie, movie_id) is None:
+            return {"skipped": "Movie no longer exists"}
+        if match[1] == "youtube-refresh":
+            return asdict(refresh_movie_analytics(db, movie_id))
+        return refresh_review_sentiments_for_movie(db, movie_id)

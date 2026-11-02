@@ -1,0 +1,9 @@
+{$PUBLIC_HOST} {
+    request_body {
+        max_size 64KB
+    }
+    reverse_proxy frontend:3000 {
+        # Replace, never append, any untrusted client-supplied value.
+        header_up X-ReelTogether-Peer {http.request.remote.host}
+    }
+}

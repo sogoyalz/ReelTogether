@@ -50,14 +50,18 @@ const categoryMeta = [
 
 export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
   const categoryWinners = categoryMeta.map((category) => {
-    const winner = [...items].sort(
-      (left, right) =>
-        Number(right[category.key as keyof ComparisonItem]) - Number(left[category.key as keyof ComparisonItem]),
-    )[0]
+    const eligible = items.filter(item => {
+      const value = Number(item[category.key as keyof ComparisonItem])
+      return Number.isFinite(value) && value > 0 && (category.key !== 'predicted_opening_weekend_usd' || item.forecast_is_public)
+    })
+    const maximum = Math.max(...eligible.map(item => Number(item[category.key as keyof ComparisonItem])))
+    const leaders = eligible.filter(item => Number(item[category.key as keyof ComparisonItem]) === maximum)
+    const winner = leaders[0]
 
     return {
       ...category,
       winner,
+      leaders,
     }
   })
 
@@ -75,13 +79,13 @@ export function ComparisonSpotlight({ items }: { items: ComparisonItem[] }) {
             <div className="metric-card" key={category.key}>
               <div className="metric-label">{category.label}</div>
               <div className="metric-value" style={{ fontSize: '1.35rem' }}>
-                {category.winner.title}
+                {category.leaders.length ? category.leaders.map(item => item.title).join(" · ") : "Insufficient data"}
               </div>
               <p className="meta" style={{ marginTop: 10 }}>
                 {category.description}
               </p>
               <div style={{ marginTop: 14, fontWeight: 700 }}>
-                {category.format(category.winner)}
+                {category.winner ? `${category.leaders.length > 1 ? "Tied · " : ""}${category.format(category.winner)}` : "No positive comparable value"}
               </div>
             </div>
           ))}

@@ -1,3 +1,5 @@
+> October 31 update: PostgreSQL now also executes filtering, counts, facets and pagination in SQL. See [the current release](HARDENING_RELEASE.md) for validation and limitations. The measurements below are historical SQLite measurements, not new PostgreSQL benchmarks.
+
 # Database-backed catalog browsing
 
 The SQLite deployment now runs browse/search predicates, ordering, result counts, pagination and full-catalog facets in SQL. Only movies on the requested page and their latest analytics are hydrated into ORM objects. There is no global ORM or facet cache to invalidate.
@@ -28,4 +30,4 @@ These are local sequential measurements, not production load or capacity evidenc
 
 ## Scaling limits
 
-Substring matching and JSON facets still require database scans; moving execution into SQL does not make every filter indexed. A future larger deployment may benefit from normalized facet tables, full-text search with explicitly agreed search semantics, and dedicated load testing. The non-SQLite compatibility path still filters in Python.
+Substring matching and JSON facets still require database scans; moving execution into SQL does not make every filter indexed. A future larger deployment may benefit from normalized facet tables, full-text search with explicitly agreed search semantics, and dedicated load testing. The compatibility path for dialects other than SQLite and PostgreSQL still filters in Python.
